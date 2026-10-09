@@ -6,3 +6,32 @@
     stack_name: "{{ project_tag }}-open-environment"
     state: absent
     region: "{{ aws_region_loop | default(aws_region) | default(region) | default('us-east-1') }}"
+  register: r_open_environment_destroy
+  until: r_open_environment_destroy is succeeded
+  retries: "{{ cloudformation_retries | default(3) }}"
+  delay: "{{ cloudformation_retry_delay | default(60) }}"
+  ignore_errors: true
+
+# The stack manages an IAM user and its access key. CloudFormation cannot delete
+# the user if anything was attached to it out of band - extra access keys, managed
+# policies, group membership, MFA devices - which is a routine outcome for an OPEN
+# environment, since the user is handed console credentials for that very user.
+# Failing here aborts destroy_env.yml before template_destroy runs and leaves the
+# AnarchySubject retrying destroy indefinitely. In a sandbox this is safe to skip:
+# AWS Nuke removes the IAM user when the account is released.
+- name: Warn if Open Environment Cloudformation stack deletion failed
+  when:
+  - r_open_environment_destroy is failed
+  - open_environment_destroy_ignore_failure | bool
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: Cloudformation stack {{ project_tag }}-open-environment deletion failed.
+      This is non-fatal - AWS Nuke will clean up remaining resources when the sandbox
+      is released. Error: {{ r_open_environment_destroy.msg | default('unknown') }}
+
+- name: Report Open Environment Cloudformation error
+  when:
+  - r_open_environment_destroy is failed
+  - not open_environment_destroy_ignore_failure | bool
+  ansible.builtin.fail:
+    msg: "FAIL {{ project_tag }}-open-environment Destroy Cloudformation"

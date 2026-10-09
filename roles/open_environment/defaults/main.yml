@@ -8,3 +8,10 @@ sandbox_enable_ui: false
 
 sandbox_user_info_data_enable: true
 sandbox_user_info_messages_enable: true
+
+# Tolerate a failed deletion of the Open Environment Cloudformation stack only
+# when running in a sandbox, where AWS Nuke reclaims the account on release.
+# Outside a sandbox the orphaned IAM user would keep AdministratorAccess, so the
+# destroy must hard-fail instead. Mirrors cloudformation_destroy_ignore_failure
+# in the template_destroy role.
+open_environment_destroy_ignore_failure: "{{ sandbox_zone | default('') != '' }}"
