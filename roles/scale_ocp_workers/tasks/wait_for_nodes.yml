@@ -12,7 +12,9 @@
     - "!node-role.kubernetes.io/control-plane"
   register: r_worker_nodes
   until: >-
-    (r_worker_nodes.resources | length >= worker_instance_count | int)
+    r_worker_nodes.resources is defined
+    and (r_worker_nodes.resources | length > 0)
+    and (r_worker_nodes.resources | length >= worker_instance_count | int)
     and
     (r_worker_nodes.resources
       | selectattr('status.conditions', 'defined')
@@ -25,6 +27,7 @@
   ignore_errors: true
 
 - name: Print worker node status
+  when: r_worker_nodes.resources is defined
   ansible.builtin.debug:
     msg:
     - "Worker nodes ready: {{ r_worker_nodes.resources | length }}"
@@ -34,7 +37,9 @@
   ansible.builtin.set_fact:
     _worker_nodes_ready: >-
       {{
-        (r_worker_nodes.resources | length >= worker_instance_count | int)
+        r_worker_nodes.resources is defined
+        and (r_worker_nodes.resources | length > 0)
+        and (r_worker_nodes.resources | length >= worker_instance_count | int)
         and
         (r_worker_nodes.resources
           | selectattr('status.conditions', 'defined')
