@@ -1,0 +1,64 @@
+---
+# Renders the CloudFormation template and checks the nested virtualization IAM user.
+# Run: ansible-playbook tests/template_generate/test_nested_virt_iam_user.yml
+- name: Test nested virtualization IAM user in the CloudFormation template
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+  - ../../roles/template_generate/defaults/main.yml
+  - vars_minimal.yml
+  vars:
+    _template: ../../roles/template_generate/templates/cloud_template.yaml.j2
+  tasks:
+  - name: Render the template with the gate on, off, and on with a secondary stack
+    ansible.builtin.set_fact:
+      _on: "{{ lookup('ansible.builtin.template', _template, template_vars={'aws_nested_virt_iam_user_create': true}) | from_yaml }}"
+      _off: "{{ lookup('ansible.builtin.template', _template) | from_yaml }}"
+      _secondary: >-
+        {{ lookup('ansible.builtin.template', _template,
+                  template_vars={'aws_nested_virt_iam_user_create': true, 'secondary_stack': true}) | from_yaml }}
+
+  - name: Gate on creates the user, access key, and outputs
+    ansible.builtin.assert:
+      that:
+      - "'NestedVirtUser' in _on.Resources"
+      - "'NestedVirtUserAccessKey' in _on.Resources"
+      - "'NestedVirtUserAccessKey' in _on.Outputs"
+      - "'NestedVirtUserSecretAccessKey' in _on.Outputs"
+
+  - name: Extract policy statements
+    ansible.builtin.set_fact:
+      _statements: "{{ _on.Resources.NestedVirtUser.Properties.Policies[0].PolicyDocument.Statement }}"
+
+  - name: Split statements
+    ansible.builtin.set_fact:
+      _scoped: "{{ _statements | selectattr('Action', 'contains', 'ec2:StopInstances') | first }}"
+      _read: "{{ _statements | selectattr('Action', 'contains', 'ec2:DescribeInstances') | first }}"
+      _all_actions: "{{ _statements | map(attribute='Action') | flatten }}"
+
+  - name: Policy is scoped to this cluster's worker instances
+    ansible.builtin.assert:
+      that:
+      - _statements | length == 2
+      - _statements | map(attribute='Effect') | unique == ['Allow']
+      - _scoped.Action | sort == ['ec2:StopInstances', 'ec2:StartInstances', 'ec2:ModifyInstanceCpuOptions'] | sort
+      - _scoped.Resource == 'arn:aws:ec2:*:*:instance/*'
+      - _scoped.Condition.StringEquals['aws:ResourceTag/guid'] == 'abc12'
+      - _scoped.Condition.StringLike['aws:ResourceTag/Name'] == '*-worker-*'
+      - _read.Action | sort == ['ec2:DescribeInstances', 'ec2:DescribeInstanceTypes'] | sort
+      - _read.Resource == '*'
+      - _all_actions | length == 5
+
+  - name: Gate off (default) creates nothing
+    ansible.builtin.assert:
+      that:
+      - "'NestedVirtUser' not in _off.Resources"
+      - "'NestedVirtUserAccessKey' not in _off.Resources"
+      - "'NestedVirtUserSecretAccessKey' not in _off.Outputs"
+
+  - name: Secondary stacks never create the user
+    ansible.builtin.assert:
+      that:
+      - "'NestedVirtUser' not in _secondary.Resources"
+      - "'NestedVirtUserSecretAccessKey' not in _secondary.Outputs"

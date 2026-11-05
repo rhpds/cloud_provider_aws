@@ -1,0 +1,11 @@
+---
+# Smallest set of variables that renders cloud_template.yaml.j2 for tests.
+# Placeholder values only.
+guid: abc12
+base_domain: example.com
+config: openshift-cluster
+project_tag: openshift-cluster-abc12
+aws_dns_create_public_zone: false
+HostedZoneId: Z0000000EXAMPLE
+used_security_groups: []
+instances: []

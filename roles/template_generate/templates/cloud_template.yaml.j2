@@ -376,6 +376,42 @@ Resources:
       Properties:
         UserName:
           Ref: Route53User
+
+{%   if aws_nested_virt_iam_user_create | default(false) | bool %}
+  # Scoped user that can only stop, start, and change CPU options on this
+  # cluster's worker instances (used to enable nested virtualization)
+  NestedVirtUser:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+        - PolicyName: NestedVirtAccess
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:StopInstances
+                  - ec2:StartInstances
+                  - ec2:ModifyInstanceCpuOptions
+                Resource: arn:aws:ec2:*:*:instance/*
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/guid: "{{ guid }}"
+                  StringLike:
+                    aws:ResourceTag/Name: "*-worker-*"
+
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceTypes
+                Resource: "*"
+
+  NestedVirtUserAccessKey:
+      DependsOn: NestedVirtUser
+      Type: AWS::IAM::AccessKey
+      Properties:
+        UserName:
+          Ref: NestedVirtUser
+{%   endif %}
 {% endif %}
 
 {% if sandbox_student_user is defined 
@@ -421,6 +457,18 @@ Outputs:
         - Route53UserAccessKey
         - SecretAccessKey
     Description: IAM User for Route53 (Let's Encrypt)
+{%   if aws_nested_virt_iam_user_create | default(false) | bool %}
+  NestedVirtUserAccessKey:
+    Value:
+      Ref: NestedVirtUserAccessKey
+    Description: IAM User for enabling nested virtualization on workers
+  NestedVirtUserSecretAccessKey:
+    Value:
+      Fn::GetAtt:
+        - NestedVirtUserAccessKey
+        - SecretAccessKey
+    Description: IAM User for enabling nested virtualization on workers
+{%   endif %}
 {% endif %}
 
 {% if sandbox_student_user is defined
