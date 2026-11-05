@@ -15,3 +15,9 @@ _nv_q_candidates: >-
   instance_type: spec.providerSpec.value.instanceType,
   region: spec.providerSpec.value.placement.region,
   node: status.nodeRef.name}
+
+# AWS CLI prefix. The scoped credentials are read from a temporary shared
+# credentials file under this profile (see aws.yml), never from environment
+# variables, which Ansible shows at -vvv.
+_nv_aws_profile: nested-virt
+_nv_aws: ["aws", "--profile", "{{ _nv_aws_profile }}"]

@@ -1,0 +1,68 @@
+---
+# Tests aws.yml (credentials file, instance type check, target selection,
+# enable) against a fake AWS CLI.
+# Run: ansible-playbook tests/nested_virtualization/test_aws.yml
+# Secret check: ansible-playbook -vvv tests/nested_virtualization/test_aws.yml | grep -c CHANGEME-SECRET-MARKER
+#   must print 0
+- name: Test nested_virtualization aws.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  environment:
+    PATH: "{{ playbook_dir }}/bin:{{ lookup('ansible.builtin.env', 'PATH') }}"
+    FAKE_AWS_LOG: "{{ playbook_dir }}/fake_aws.log"
+    FAKE_AWS_ENVLOG: "{{ playbook_dir }}/fake_aws_env.log"
+    FAKE_AWS_TYPES: "{{ playbook_dir }}/fixtures/types_supported.json"
+    FAKE_AWS_DESCRIBE: "{{ playbook_dir }}/fixtures/describe_all_enabled.json"
+    FAKE_AWS_DESCRIBE_FIRST: "{{ playbook_dir }}/fixtures/describe_enabled_stopped.json"
+  vars:
+    _role: "{{ playbook_dir }}/../../roles/nested_virtualization"
+    nested_virt_start_delay: 0
+    aws_nested_virt_access_key_id: AKIAEXAMPLE
+    aws_nested_virt_secret_access_key: CHANGEME-SECRET-MARKER
+    _nv_region: us-east-2
+    _nv_candidates:
+    - {machine: ocp-abc12-worker-us-east-2a-xyz1, instance_id: i-0aaa1, instance_type: m7i.2xlarge, region: us-east-2, node: n1}
+    - {machine: ocp-abc12-worker-us-east-2a-xyz2, instance_id: i-0aaa2, instance_type: m7i.2xlarge, region: us-east-2, node: n2}
+  tasks:
+  - name: Reset the fake aws logs
+    ansible.builtin.copy:
+      content: ""
+      dest: "{{ item }}"
+      mode: "0644"
+    loop:
+    - "{{ playbook_dir }}/fake_aws.log"
+    - "{{ playbook_dir }}/fake_aws_env.log"
+
+  - name: test_aws_flow - run aws.yml
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: aws.yml
+
+  - name: test_aws_flow - read the fake aws logs
+    ansible.builtin.set_fact:
+      _calls: "{{ lookup('ansible.builtin.file', playbook_dir + '/fake_aws.log').splitlines() }}"
+      _envs: "{{ lookup('ansible.builtin.file', playbook_dir + '/fake_aws_env.log').splitlines() }}"
+
+  - name: test_aws_flow - credentials come from a private profile file, never the environment
+    ansible.builtin.assert:
+      that:
+      - _envs | length == _calls | length
+      - _envs | unique == ['profile=nested-virt envsecret=unset credfile=has-profile perms=600 region=us-east-2']
+
+  - name: test_aws_flow - the stopped instance is restarted, only the not-enabled one is stopped
+    ansible.builtin.assert:
+      that:
+      - _calls[0] is match('ec2 describe-instance-types --instance-types m7i.2xlarge')
+      - _calls | select('match', 'ec2 stop-instances') | list == ['ec2 stop-instances --instance-ids i-0aaa2']
+      - _calls | select('match', 'ec2 start-instances') | list == ['ec2 start-instances --instance-ids i-0aaa2 i-0aaa1']
+
+  - name: test_aws_flow - check the credentials file was removed
+    ansible.builtin.stat:
+      path: "{{ _nv_aws_credentials_file }}"
+    register: r_credfile
+
+  - name: test_aws_flow - assert the credentials file was removed
+    ansible.builtin.assert:
+      that:
+      - not r_credfile.stat.exists

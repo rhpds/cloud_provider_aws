@@ -1,10 +1,26 @@
 #!/usr/bin/env bash
-# Fake AWS CLI for test_enable.yml. Logs each call to $FAKE_AWS_LOG.
-#   FAKE_AWS_DESCRIBE   file returned by describe-instances
-#   FAKE_AWS_START_ICE  number of start-instances calls that fail with
-#                       InsufficientInstanceCapacity before one succeeds
-#   FAKE_AWS_START_ERROR if set, start-instances fails with another error
+# Fake AWS CLI for the nested_virtualization tests.
+#   FAKE_AWS_LOG          each call (without --profile) is appended here
+#   FAKE_AWS_ENVLOG       per call: credential env and profile file checks
+#   FAKE_AWS_DESCRIBE     file returned by describe-instances
+#   FAKE_AWS_DESCRIBE_FIRST  if set, file returned by the first describe-instances
+#   FAKE_AWS_TYPES        file returned by describe-instance-types
+#   FAKE_AWS_START_ICE    start-instances calls that fail with
+#                         InsufficientInstanceCapacity before one succeeds
+#   FAKE_AWS_START_ERROR  if set, start-instances fails with another error
+profile=""
+if [ "$1" = "--profile" ]; then profile="$2"; shift 2; fi
 echo "$*" >> "$FAKE_AWS_LOG"
+if [ -n "$FAKE_AWS_ENVLOG" ]; then
+  envsecret=unset; [ -n "$AWS_SECRET_ACCESS_KEY" ] && envsecret=set
+  credfile=missing
+  if [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] && [ -f "$AWS_SHARED_CREDENTIALS_FILE" ]; then
+    credfile=present
+    grep -q "^\[$profile\]" "$AWS_SHARED_CREDENTIALS_FILE" && credfile=has-profile
+    perms=$(stat -f %Lp "$AWS_SHARED_CREDENTIALS_FILE" 2>/dev/null || stat -c %a "$AWS_SHARED_CREDENTIALS_FILE")
+  fi
+  echo "profile=$profile envsecret=$envsecret credfile=$credfile perms=${perms:-none} region=$AWS_DEFAULT_REGION" >> "$FAKE_AWS_ENVLOG"
+fi
 case "$2" in
   start-instances)
     if [ -n "$FAKE_AWS_START_ERROR" ]; then
@@ -17,6 +33,9 @@ case "$2" in
       exit 254
     fi
     echo '{}' ;;
-  describe-instances) cat "$FAKE_AWS_DESCRIBE" ;;
+  describe-instances)
+    count=$(grep -c "^ec2 describe-instances" "$FAKE_AWS_LOG")
+    if [ "$count" -eq 1 ] && [ -n "$FAKE_AWS_DESCRIBE_FIRST" ]; then cat "$FAKE_AWS_DESCRIBE_FIRST"; else cat "$FAKE_AWS_DESCRIBE"; fi ;;
+  describe-instance-types) cat "$FAKE_AWS_TYPES" ;;
   *) echo '{}' ;;
 esac

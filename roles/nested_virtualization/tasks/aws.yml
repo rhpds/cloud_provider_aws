@@ -1,0 +1,69 @@
+---
+# Input: _nv_candidates, _nv_region, aws_nested_virt_access_key_id,
+#        aws_nested_virt_secret_access_key
+# Output: _nv_targets, _nv_stopped, _nv_enabled_ids (when instances were restarted)
+- name: Enable nested virtualization on worker instances with the scoped credentials
+  block:
+  - name: Create a temporary AWS credentials file
+    ansible.builtin.tempfile:
+      state: file
+      suffix: -nested-virt-credentials
+    register: r_nv_credentials_file
+
+  - name: Set the credentials file path
+    ansible.builtin.set_fact:
+      _nv_aws_credentials_file: "{{ r_nv_credentials_file.path }}"
+
+  - name: Write the scoped credentials
+    no_log: true
+    ansible.builtin.copy:
+      dest: "{{ _nv_aws_credentials_file }}"
+      mode: "0600"
+      content: |
+        [{{ _nv_aws_profile }}]
+        aws_access_key_id = {{ aws_nested_virt_access_key_id }}
+        aws_secret_access_key = {{ aws_nested_virt_secret_access_key }}
+
+  - name: Run AWS calls with the scoped profile
+    environment:
+      AWS_SHARED_CREDENTIALS_FILE: "{{ _nv_aws_credentials_file }}"
+      AWS_DEFAULT_REGION: "{{ _nv_region }}"
+    block:
+    - name: Describe worker instance types
+      ansible.builtin.command:
+        argv: >-
+          {{ _nv_aws + ['ec2', 'describe-instance-types', '--instance-types']
+             + (_nv_candidates | map(attribute='instance_type') | unique | list)
+             + ['--output', 'json'] }}
+      register: r_nv_describe_types
+      changed_when: false
+
+    - name: Check worker instance types support nested virtualization
+      ansible.builtin.include_tasks: check_instance_types.yml
+      vars:
+        _nv_describe_types: "{{ r_nv_describe_types.stdout | from_json }}"
+
+    - name: Describe worker instances
+      ansible.builtin.command:
+        argv: >-
+          {{ _nv_aws + ['ec2', 'describe-instances', '--instance-ids']
+             + (_nv_candidates | map(attribute='instance_id') | list)
+             + ['--output', 'json'] }}
+      register: r_nv_describe
+      changed_when: false
+
+    - name: Select worker instances to enable or start
+      ansible.builtin.include_tasks: select_targets.yml
+      vars:
+        _nv_describe: "{{ r_nv_describe.stdout | from_json }}"
+
+    - name: Stop, enable nested virtualization, and start instances
+      when: (_nv_targets | length > 0) or (_nv_stopped | length > 0)
+      ansible.builtin.include_tasks: enable.yml
+
+  always:
+  - name: Remove the temporary AWS credentials file
+    when: _nv_aws_credentials_file is defined
+    ansible.builtin.file:
+      path: "{{ _nv_aws_credentials_file }}"
+      state: absent

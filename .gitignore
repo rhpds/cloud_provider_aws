@@ -14,3 +14,4 @@ __pycache__
 *.swp
 *.vscode
 tests/nested_virtualization/fake_aws.log
+tests/nested_virtualization/fake_aws_env.log

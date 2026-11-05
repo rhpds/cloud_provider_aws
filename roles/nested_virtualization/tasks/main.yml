@@ -49,42 +49,7 @@
     msg: openshift_aws_nested_virtualization_enable is true but the cluster has no worker Machines
 
 - name: Enable nested virtualization on worker instances
-  environment:
-    AWS_ACCESS_KEY_ID: "{{ aws_nested_virt_access_key_id }}"
-    AWS_SECRET_ACCESS_KEY: "{{ aws_nested_virt_secret_access_key }}"
-    AWS_DEFAULT_REGION: "{{ _nv_region }}"
-  block:
-  - name: Describe worker instance types
-    ansible.builtin.command:
-      argv: >-
-        {{ ['aws', 'ec2', 'describe-instance-types', '--instance-types']
-           + (_nv_candidates | map(attribute='instance_type') | unique | list)
-           + ['--output', 'json'] }}
-    register: r_nv_describe_types
-    changed_when: false
-
-  - name: Check worker instance types support nested virtualization
-    ansible.builtin.include_tasks: check_instance_types.yml
-    vars:
-      _nv_describe_types: "{{ r_nv_describe_types.stdout | from_json }}"
-
-  - name: Describe worker instances
-    ansible.builtin.command:
-      argv: >-
-        {{ ['aws', 'ec2', 'describe-instances', '--instance-ids']
-           + (_nv_candidates | map(attribute='instance_id') | list)
-           + ['--output', 'json'] }}
-    register: r_nv_describe
-    changed_when: false
-
-  - name: Select worker instances without nested virtualization
-    ansible.builtin.include_tasks: select_targets.yml
-    vars:
-      _nv_describe: "{{ r_nv_describe.stdout | from_json }}"
-
-  - name: Stop, enable nested virtualization, and start target instances
-    when: _nv_targets | length > 0
-    ansible.builtin.include_tasks: enable.yml
+  ansible.builtin.include_tasks: aws.yml
 
 - name: Wait for worker nodes to be Ready
   ansible.builtin.include_tasks: wait_for_nodes.yml

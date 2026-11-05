@@ -18,10 +18,12 @@ It is called by:
 - name: Enable nested virtualization on worker instances
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_aws.nested_virtualization
-  vars:
-    aws_nested_virt_access_key_id: "{{ aws_nested_virt_access_key_id }}"
-    aws_nested_virt_secret_access_key: "{{ aws_nested_virt_secret_access_key }}"
 ```
+
+- `aws_nested_virt_access_key_id` and `aws_nested_virt_secret_access_key`
+  must be set (in the direct path by `post_infra`, in the scale path from
+  provision data). The role writes them to a temporary 0600 credentials
+  file for the AWS CLI and removes it afterwards.
 
 - The credentials belong to the scoped `NestedVirtUser` IAM user created by
   the cluster's CloudFormation stack (`aws_nested_virt_iam_user_create`). It
@@ -33,6 +35,7 @@ It is called by:
 - Workers need a supported Intel instance type (for example `m7i`). The
   role checks this before stopping anything.
 - Already enabled instances are skipped, so re-running the role is safe.
+  Instances left stopped by an earlier failed run are started again.
 - Machines created later (scaling MachineSets, autoscaler, replacements) do
   not get nested virtualization.
 

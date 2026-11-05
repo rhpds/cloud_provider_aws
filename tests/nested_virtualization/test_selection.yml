@@ -81,6 +81,31 @@
       that:
       - _nv_targets == []
 
+  - name: test_targets_stopped - enabled but stopped instances must be started again
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: select_targets.yml
+    vars:
+      _nv_describe: "{{ lookup('ansible.builtin.file', _fixtures + '/describe_enabled_stopped.json') | from_json }}"
+
+  - name: test_targets_stopped - assert
+    ansible.builtin.assert:
+      that:
+      - _nv_targets | map(attribute='instance_id') | list == ['i-0aaa2']
+      - _nv_stopped == ['i-0aaa1']
+
+  - name: test_targets_mixed_has_no_stopped - running instances are not in _nv_stopped
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: select_targets.yml
+    vars:
+      _nv_describe: "{{ lookup('ansible.builtin.file', _fixtures + '/describe_mixed.json') | from_json }}"
+
+  - name: test_targets_mixed_has_no_stopped - assert
+    ansible.builtin.assert:
+      that:
+      - _nv_stopped == []
+
   # ------------------------------------------------------------ instance types
   - name: test_unsupported_types - run
     block:

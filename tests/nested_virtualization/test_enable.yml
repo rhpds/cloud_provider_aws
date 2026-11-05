@@ -15,6 +15,7 @@
     _nv_targets:
     - {instance_id: i-0aaa1, core_count: 4, threads_per_core: 2}
     - {instance_id: i-0aaa2, core_count: 8, threads_per_core: 1}
+    _nv_stopped: []
   tasks:
   - name: test_enable_happy - run
     ansible.builtin.include_tasks: enable_case.yml
@@ -71,3 +72,43 @@
       that:
       - "'i-0aaa2' in _t_msg"
       - "'not enabled' in _t_msg"
+
+  # Inputs set with set_fact (as select_targets.yml does): include params
+  # would outrank the set_fact inside enable.yml and pin the inputs.
+  - name: test_enable_restarts_stopped - set inputs
+    ansible.builtin.set_fact:
+      _nv_targets:
+      - {instance_id: i-0aaa2, core_count: 4, threads_per_core: 2}
+      _nv_stopped: [i-0aaa1]
+
+  - name: test_enable_restarts_stopped - stopped instances are started with the targets
+    ansible.builtin.include_tasks: enable_case.yml
+    vars:
+      _env: {FAKE_AWS_DESCRIBE: "{{ _fixtures }}/describe_all_enabled.json"}
+      _expect_failure: false
+
+  - name: test_enable_restarts_stopped - assert only the target is stopped and modified
+    ansible.builtin.assert:
+      that:
+      - _calls | select('match', 'ec2 stop-instances') | list == ['ec2 stop-instances --instance-ids i-0aaa2']
+      - _calls | select('match', 'ec2 modify-instance-cpu-options') | list | length == 1
+      - _calls | select('match', 'ec2 start-instances') | list == ['ec2 start-instances --instance-ids i-0aaa2 i-0aaa1']
+      - _calls | select('match', 'ec2 wait instance-running --instance-ids i-0aaa2 i-0aaa1') | list | length == 1
+
+  - name: test_enable_only_stopped - set inputs
+    ansible.builtin.set_fact:
+      _nv_targets: []
+      _nv_stopped: [i-0aaa1]
+
+  - name: test_enable_only_stopped - no targets, only stopped instances to start
+    ansible.builtin.include_tasks: enable_case.yml
+    vars:
+      _env: {FAKE_AWS_DESCRIBE: "{{ _fixtures }}/describe_all_enabled.json"}
+      _expect_failure: false
+
+  - name: test_enable_only_stopped - assert nothing is stopped or modified
+    ansible.builtin.assert:
+      that:
+      - _calls | select('match', 'ec2 stop-instances') | list == []
+      - _calls | select('match', 'ec2 modify-instance-cpu-options') | list == []
+      - _calls | select('match', 'ec2 start-instances') | list == ['ec2 start-instances --instance-ids i-0aaa1']
