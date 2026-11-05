@@ -78,6 +78,11 @@
     when: worker_instance_count | int > 0
     ansible.builtin.include_tasks: wait_for_nodes.yml
 
+  - name: Enable nested virtualization on worker instances
+    when: openshift_aws_nested_virtualization_enable | bool
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_aws.nested_virtualization
+
   - name: Configure worker-only mode
     when: worker_only | default(false) | bool
     ansible.builtin.include_tasks: configure_worker_only.yml
