@@ -21,7 +21,7 @@
           {%- set _ = result.append(base) -%}
         {%- endif -%}
       {%- endfor -%}
-      {{ result }}
+      {{ result | to_json | from_json }}
 
 - name: Display scaling plan
   ansible.builtin.debug:
@@ -38,8 +38,8 @@
     name: "{{ item.0.metadata.name }}"
     state: present
     definition:
-      spec:
-        replicas: "{{ item.1 | int }}"
+      spec: |
+        {{ {"replicas": item.1} }}
   loop: "{{ existing_machinesets | zip(replica_distribution) | list }}"
   loop_control:
     label: "{{ item.0.metadata.name }} -> {{ item.1 }} replicas"
