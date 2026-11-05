@@ -1,0 +1,16 @@
+---
+# Input: _nv_describe_types (parsed output of aws ec2 describe-instance-types)
+# Output: _nv_unsupported_types; fails if not empty
+- name: Find instance types without nested virtualization support
+  ansible.builtin.set_fact:
+    _nv_unsupported_types: >-
+      {{ _nv_describe_types | json_query(
+         "InstanceTypes[?!contains(ProcessorInfo.SupportedFeatures || `[]`, 'nested-virtualization')].InstanceType")
+         | sort }}
+
+- name: Fail if any worker instance type does not support nested virtualization
+  when: _nv_unsupported_types | length > 0
+  ansible.builtin.fail:
+    msg: >-
+      Instance type(s) {{ _nv_unsupported_types | join(', ') }} do not support
+      nested virtualization; choose a supported Intel type (for example m7i)

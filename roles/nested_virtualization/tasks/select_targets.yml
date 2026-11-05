@@ -1,0 +1,11 @@
+---
+# Input: _nv_describe (parsed output of aws ec2 describe-instances)
+# Output: _nv_targets (instances that do not have nested virtualization enabled)
+- name: Select instances without nested virtualization
+  ansible.builtin.set_fact:
+    _nv_targets: >-
+      {{ _nv_describe | json_query(
+         "Reservations[].Instances[] | [?CpuOptions.NestedVirtualization != 'enabled'].{
+         instance_id: InstanceId,
+         core_count: CpuOptions.CoreCount,
+         threads_per_core: CpuOptions.ThreadsPerCore}") }}

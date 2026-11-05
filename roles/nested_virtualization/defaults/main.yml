@@ -1,0 +1,25 @@
+---
+# Credentials of the scoped NestedVirtUser IAM user (required).
+# Created by the openshift-cluster CloudFormation stack and passed through
+# provision data (aws_nested_virt_access_key_id/aws_nested_virt_secret_access_key).
+aws_nested_virt_access_key_id: ""
+aws_nested_virt_secret_access_key: ""
+
+# Wait for all worker Machines to be Running with a Node (retries * delay seconds)
+nested_virt_machine_wait_retries: 60
+nested_virt_machine_wait_delay: 10
+
+# Retry start-instances on InsufficientInstanceCapacity (retries * delay seconds)
+nested_virt_start_retries: 20
+nested_virt_start_delay: 30
+
+# Wait for worker nodes to be Ready after the restart (retries * delay seconds)
+nested_virt_node_ready_retries: 90
+nested_virt_node_ready_delay: 10
+
+# Wait for the per-node /dev/kvm check pods to finish (retries * delay seconds)
+nested_virt_kvm_check_retries: 60
+nested_virt_kvm_check_delay: 5
+
+# Temporary namespace for the /dev/kvm check pods (deleted afterwards)
+nested_virt_kvm_check_namespace: agnosticd-nested-virt-check
