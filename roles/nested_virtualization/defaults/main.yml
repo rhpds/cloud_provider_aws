@@ -18,7 +18,7 @@ nested_virt_node_ready_retries: 90
 nested_virt_node_ready_delay: 10
 
 # Wait for the per-node /dev/kvm check pods to finish (retries * delay seconds)
-nested_virt_kvm_check_retries: 60
+nested_virt_kvm_check_retries: 120
 nested_virt_kvm_check_delay: 5
 
 # Temporary namespace for the /dev/kvm check pods (deleted afterwards)

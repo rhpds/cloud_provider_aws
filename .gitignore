@@ -13,3 +13,4 @@ __pycache__
 *.retry
 *.swp
 *.vscode
+tests/nested_virtualization/fake_aws.log

@@ -1,0 +1,100 @@
+---
+# Enables EC2 nested virtualization on the cluster's worker instances and
+# verifies /dev/kvm on every worker node. Cluster API access comes from the
+# caller (module_defaults for group/k8s, or KUBECONFIG).
+- name: Check nested virtualization credentials
+  ansible.builtin.include_tasks: preflight_keys.yml
+
+- name: Wait for worker Machines to be Running with a Node
+  kubernetes.core.k8s_info:
+    api_version: machine.openshift.io/v1beta1
+    kind: Machine
+    namespace: openshift-machine-api
+    label_selectors:
+    - machine.openshift.io/cluster-api-machine-role=worker
+  register: r_nv_machines
+  until: >-
+    r_nv_machines.resources is defined
+    and (r_nv_machines.resources | json_query(_nv_q_workers) | json_query(_nv_q_not_ready) | length == 0)
+  retries: "{{ nested_virt_machine_wait_retries | int }}"
+  delay: "{{ nested_virt_machine_wait_delay | int }}"
+  ignore_errors: true
+
+- name: Fail if Machines could not be listed
+  when: r_nv_machines.resources is not defined
+  ansible.builtin.fail:
+    msg: "Could not list Machines in openshift-machine-api: {{ r_nv_machines.msg | default('unknown error') }}"
+
+- name: Select candidate worker Machines
+  ansible.builtin.include_tasks: select_candidates.yml
+  vars:
+    _nv_machines: "{{ r_nv_machines.resources }}"
+
+- name: Fail if any worker Machine failed
+  when: _nv_failed | length > 0
+  ansible.builtin.fail:
+    msg: "Worker Machines in phase Failed: {{ _nv_failed | join(', ') }}"
+
+- name: Fail if worker Machines are not ready
+  when: _nv_not_ready | length > 0
+  ansible.builtin.fail:
+    msg: >-
+      Worker Machines not Running with a Node after
+      {{ nested_virt_machine_wait_retries }}*{{ nested_virt_machine_wait_delay }} seconds:
+      {{ _nv_not_ready | join(', ') }}
+
+- name: Fail if there are no worker Machines
+  when: _nv_candidates | length == 0
+  ansible.builtin.fail:
+    msg: openshift_aws_nested_virtualization_enable is true but the cluster has no worker Machines
+
+- name: Enable nested virtualization on worker instances
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ aws_nested_virt_access_key_id }}"
+    AWS_SECRET_ACCESS_KEY: "{{ aws_nested_virt_secret_access_key }}"
+    AWS_DEFAULT_REGION: "{{ _nv_region }}"
+  block:
+  - name: Describe worker instance types
+    ansible.builtin.command:
+      argv: >-
+        {{ ['aws', 'ec2', 'describe-instance-types', '--instance-types']
+           + (_nv_candidates | map(attribute='instance_type') | unique | list)
+           + ['--output', 'json'] }}
+    register: r_nv_describe_types
+    changed_when: false
+
+  - name: Check worker instance types support nested virtualization
+    ansible.builtin.include_tasks: check_instance_types.yml
+    vars:
+      _nv_describe_types: "{{ r_nv_describe_types.stdout | from_json }}"
+
+  - name: Describe worker instances
+    ansible.builtin.command:
+      argv: >-
+        {{ ['aws', 'ec2', 'describe-instances', '--instance-ids']
+           + (_nv_candidates | map(attribute='instance_id') | list)
+           + ['--output', 'json'] }}
+    register: r_nv_describe
+    changed_when: false
+
+  - name: Select worker instances without nested virtualization
+    ansible.builtin.include_tasks: select_targets.yml
+    vars:
+      _nv_describe: "{{ r_nv_describe.stdout | from_json }}"
+
+  - name: Stop, enable nested virtualization, and start target instances
+    when: _nv_targets | length > 0
+    ansible.builtin.include_tasks: enable.yml
+
+- name: Wait for worker nodes to be Ready
+  ansible.builtin.include_tasks: wait_for_nodes.yml
+
+- name: Verify /dev/kvm on worker nodes
+  ansible.builtin.include_tasks: verify_kvm.yml
+
+- name: Print nested virtualization summary
+  ansible.builtin.debug:
+    msg:
+    - "Worker instances: {{ _nv_candidates | map(attribute='instance_id') | join(', ') }}"
+    - "Enabled in this run: {{ _nv_enabled_ids | default([]) | join(', ') or 'none (already enabled)' }}"
+    - "Nodes with /dev/kvm: {{ _nv_candidates | map(attribute='node') | join(', ') }}"

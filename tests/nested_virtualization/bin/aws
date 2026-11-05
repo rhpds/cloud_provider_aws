@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Fake AWS CLI for test_enable.yml. Logs each call to $FAKE_AWS_LOG.
+#   FAKE_AWS_DESCRIBE   file returned by describe-instances
+#   FAKE_AWS_START_ICE  number of start-instances calls that fail with
+#                       InsufficientInstanceCapacity before one succeeds
+#   FAKE_AWS_START_ERROR if set, start-instances fails with another error
+echo "$*" >> "$FAKE_AWS_LOG"
+case "$2" in
+  start-instances)
+    if [ -n "$FAKE_AWS_START_ERROR" ]; then
+      echo "An error occurred (UnauthorizedOperation) when calling the StartInstances operation" >&2
+      exit 254
+    fi
+    count=$(grep -c "^ec2 start-instances" "$FAKE_AWS_LOG")
+    if [ "$count" -le "${FAKE_AWS_START_ICE:-0}" ]; then
+      echo "An error occurred (InsufficientInstanceCapacity) when calling the StartInstances operation" >&2
+      exit 254
+    fi
+    echo '{}' ;;
+  describe-instances) cat "$FAKE_AWS_DESCRIBE" ;;
+  *) echo '{}' ;;
+esac

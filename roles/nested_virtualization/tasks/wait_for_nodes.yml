@@ -1,0 +1,38 @@
+---
+# Input: _nv_candidates
+- name: Set candidate node names
+  ansible.builtin.set_fact:
+    _nv_candidate_nodes: "{{ _nv_candidates | map(attribute='node') | list }}"
+
+- name: Wait for worker nodes to be Ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+  register: r_nv_nodes
+  until: >-
+    r_nv_nodes.resources is defined
+    and (r_nv_nodes.resources
+         | selectattr('metadata.name', 'in', _nv_candidate_nodes)
+         | selectattr('status.conditions', 'defined')
+         | list
+         | json_query("[?status.conditions[?type=='Ready' && status=='True' && reason=='KubeletReady']].metadata.name")
+         | length) == (_nv_candidate_nodes | length)
+  retries: "{{ nested_virt_node_ready_retries | int }}"
+  delay: "{{ nested_virt_node_ready_delay | int }}"
+  ignore_errors: true
+
+- name: Find worker nodes that are not Ready
+  ansible.builtin.set_fact:
+    _nv_nodes_not_ready: >-
+      {{ _nv_candidate_nodes | difference(
+         r_nv_nodes.resources | default([])
+         | selectattr('status.conditions', 'defined')
+         | list
+         | json_query("[?status.conditions[?type=='Ready' && status=='True' && reason=='KubeletReady']].metadata.name")) }}
+
+- name: Fail if worker nodes are not Ready
+  when: _nv_nodes_not_ready | length > 0
+  ansible.builtin.fail:
+    msg: >-
+      Worker nodes not Ready after {{ nested_virt_node_ready_retries }}*{{ nested_virt_node_ready_delay }}
+      seconds: {{ _nv_nodes_not_ready | join(', ') }}
