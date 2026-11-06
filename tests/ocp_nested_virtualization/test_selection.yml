@@ -1,0 +1,165 @@
+---
+# Tests the ocp_nested_virtualization role's selection and pre-flight logic with
+# fixture JSON. No cluster or AWS access needed.
+# Run: ansible-playbook tests/ocp_nested_virtualization/test_selection.yml
+- name: Test ocp_nested_virtualization selection and pre-flight logic
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    _role: "{{ playbook_dir }}/../../roles/ocp_nested_virtualization"
+    _fixtures: "{{ playbook_dir }}/fixtures"
+  tasks:
+  # ---------------------------------------------------------------- candidates
+  - name: test_candidates_basic - select Running worker Machines only
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: select_candidates.yml
+    vars:
+      _nv_machines: "{{ lookup('ansible.builtin.file', _fixtures + '/machines_basic.json') | from_json }}"
+
+  - name: test_candidates_basic - assert
+    ansible.builtin.assert:
+      that:
+      - _nv_candidates | map(attribute='instance_id') | sort == ['i-0aaa1', 'i-0aaa2']
+      - _nv_candidates | map(attribute='node') | sort == ['ip-10-0-1-1.us-east-2.compute.internal', 'ip-10-0-1-2.us-east-2.compute.internal']
+      - _nv_candidates | map(attribute='instance_type') | unique == ['m7i.2xlarge']
+      - _nv_candidates | map(attribute='machine') | sort == ['ocp-abc12-worker-us-east-2a-xyz1', 'ocp-abc12-worker-us-east-2a-xyz2']
+      - _nv_region == 'us-east-2'
+      - _nv_not_ready == []
+      - _nv_failed == []
+
+  - name: test_candidates_not_ready - Provisioned Machine without nodeRef is not ready
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: select_candidates.yml
+    vars:
+      _nv_machines: "{{ lookup('ansible.builtin.file', _fixtures + '/machines_not_ready.json') | from_json }}"
+
+  - name: test_candidates_not_ready - assert
+    ansible.builtin.assert:
+      that:
+      - _nv_not_ready == ['ocp-abc12-worker-us-east-2a-xyz2']
+      - _nv_candidates | map(attribute='instance_id') | list == ['i-0aaa1']
+      - _nv_failed == []
+
+  - name: test_candidates_failed - Failed Machine is reported, not waited on
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: select_candidates.yml
+    vars:
+      _nv_machines: "{{ lookup('ansible.builtin.file', _fixtures + '/machines_failed.json') | from_json }}"
+
+  - name: test_candidates_failed - assert
+    ansible.builtin.assert:
+      that:
+      - _nv_failed == ['ocp-abc12-worker-us-east-2a-xyz3']
+      - _nv_not_ready == []
+
+  # ------------------------------------------------------------------- targets
+  - name: test_targets_mixed - only instances without nested virt are targets
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: select_targets.yml
+    vars:
+      _nv_describe: "{{ lookup('ansible.builtin.file', _fixtures + '/describe_mixed.json') | from_json }}"
+
+  - name: test_targets_mixed - assert
+    ansible.builtin.assert:
+      that:
+      - "_nv_targets == [{'instance_id': 'i-0aaa2', 'core_count': 4, 'threads_per_core': 2}]"
+
+  - name: test_targets_none - all enabled gives no targets
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: select_targets.yml
+    vars:
+      _nv_describe: "{{ lookup('ansible.builtin.file', _fixtures + '/describe_all_enabled.json') | from_json }}"
+
+  - name: test_targets_none - assert
+    ansible.builtin.assert:
+      that:
+      - _nv_targets == []
+
+  - name: test_targets_stopped - enabled but stopped instances must be started again
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: select_targets.yml
+    vars:
+      _nv_describe: "{{ lookup('ansible.builtin.file', _fixtures + '/describe_enabled_stopped.json') | from_json }}"
+
+  - name: test_targets_stopped - assert
+    ansible.builtin.assert:
+      that:
+      - _nv_targets | map(attribute='instance_id') | list == ['i-0aaa2']
+      - _nv_stopped == ['i-0aaa1']
+
+  - name: test_targets_mixed_has_no_stopped - running instances are not in _nv_stopped
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: select_targets.yml
+    vars:
+      _nv_describe: "{{ lookup('ansible.builtin.file', _fixtures + '/describe_mixed.json') | from_json }}"
+
+  - name: test_targets_mixed_has_no_stopped - assert
+    ansible.builtin.assert:
+      that:
+      - _nv_stopped == []
+
+  # ------------------------------------------------------------ instance types
+  - name: test_unsupported_types - run
+    block:
+    - name: test_unsupported_types - include
+      ansible.builtin.include_role:
+        name: "{{ _role }}"
+        tasks_from: check_instance_types.yml
+      vars:
+        _nv_describe_types: "{{ lookup('ansible.builtin.file', _fixtures + '/types_mixed.json') | from_json }}"
+
+    - name: test_unsupported_types - no failure seen
+      ansible.builtin.set_fact:
+        _t_failed: false
+    rescue:
+    - name: test_unsupported_types - failure seen
+      ansible.builtin.set_fact:
+        _t_failed: true
+        _t_msg: "{{ ansible_failed_result.msg }}"
+
+  - name: test_unsupported_types - assert
+    ansible.builtin.assert:
+      that:
+      - _t_failed
+      - _nv_unsupported_types == ['m6a.2xlarge']
+      - "'m6a.2xlarge' in _t_msg"
+      - "'do not support nested virtualization' in _t_msg"
+
+  - name: test_supported_types - supported type passes
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: check_instance_types.yml
+    vars:
+      _nv_describe_types: "{{ lookup('ansible.builtin.file', _fixtures + '/types_supported.json') | from_json }}"
+
+  - name: test_supported_types - assert
+    ansible.builtin.assert:
+      that:
+      - _nv_unsupported_types == []
+
+  # ----------------------------------------------------------- pre-flight keys
+  - name: test_preflight_missing_keys - each case must fail
+    ansible.builtin.include_tasks: preflight_case.yml
+    loop:
+    - {}
+    - {aws_nested_virt_access_key_id: "", aws_nested_virt_secret_access_key: CHANGEME}
+    - {aws_nested_virt_access_key_id: AKIAEXAMPLE, aws_nested_virt_secret_access_key: ""}
+    loop_control:
+      loop_var: _case
+      label: "{{ _case.keys() | list }}"
+    vars:
+      _expect_failure: true
+
+  - name: test_preflight_keys_ok - both keys set passes
+    ansible.builtin.include_tasks: preflight_case.yml
+    vars:
+      _case: {aws_nested_virt_access_key_id: AKIAEXAMPLE, aws_nested_virt_secret_access_key: CHANGEME}
+      _expect_failure: false

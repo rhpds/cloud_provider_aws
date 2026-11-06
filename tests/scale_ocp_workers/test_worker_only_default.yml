@@ -1,0 +1,36 @@
+---
+# Checks that worker_only follows openshift_aws_nested_virtualization_enable.
+# Run: ansible-playbook tests/scale_ocp_workers/test_worker_only_default.yml
+- name: Test worker_only default in scale_ocp_workers
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+  - name: Load scale_ocp_workers defaults
+    ansible.builtin.include_vars:
+      file: ../../roles/scale_ocp_workers/defaults/main.yml
+
+  - name: By default nested virtualization and worker_only are off
+    ansible.builtin.assert:
+      that:
+      - not (openshift_aws_nested_virtualization_enable | bool)
+      - not (worker_only | bool)
+
+  - name: Turn on nested virtualization
+    ansible.builtin.set_fact:
+      openshift_aws_nested_virtualization_enable: true
+
+  - name: worker_only follows nested virtualization
+    ansible.builtin.assert:
+      that:
+      - worker_only | bool
+
+  - name: Override worker_only
+    ansible.builtin.set_fact:
+      worker_only: false
+
+  - name: An explicit worker_only wins
+    ansible.builtin.assert:
+      that:
+      - not (worker_only | bool)
+      - openshift_aws_nested_virtualization_enable | bool

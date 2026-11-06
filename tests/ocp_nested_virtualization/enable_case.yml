@@ -1,0 +1,35 @@
+---
+# One enable.yml case for test_enable.yml.
+# Inputs: _case (name), _env (extra fake aws env), _expect_failure (bool)
+- name: Enable case - reset the fake aws log
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ _log }}"
+    mode: "0644"
+
+- name: Enable case - run
+  environment: "{{ _env | combine({'FAKE_AWS_LOG': _log}) }}"
+  block:
+  - name: Enable case - include
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: enable.yml
+
+  - name: Enable case - no failure seen
+    ansible.builtin.set_fact:
+      _t_failed: false
+      _t_msg: ""
+  rescue:
+  - name: Enable case - failure seen
+    ansible.builtin.set_fact:
+      _t_failed: true
+      _t_msg: "{{ ansible_failed_result.msg | default('') }}"
+
+- name: Enable case - read the fake aws log
+  ansible.builtin.set_fact:
+    _calls: "{{ lookup('ansible.builtin.file', _log).splitlines() }}"
+
+- name: Enable case - assert failure expectation
+  ansible.builtin.assert:
+    that:
+    - _t_failed == _expect_failure

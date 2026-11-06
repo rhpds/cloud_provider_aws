@@ -1,0 +1,188 @@
+[
+ {
+  "metadata": {
+   "name": "ocp-abc12-master-0",
+   "labels": {
+    "machine.openshift.io/cluster-api-machine-role": "master",
+    "machine.openshift.io/cluster-api-machine-type": "master"
+   }
+  },
+  "spec": {
+   "providerSpec": {
+    "value": {
+     "instanceType": "m6a.2xlarge",
+     "placement": {
+      "region": "us-east-2",
+      "availabilityZone": "us-east-2a"
+     }
+    }
+   }
+  },
+  "status": {
+   "phase": "Running",
+   "providerStatus": {
+    "instanceId": "i-0bbb0",
+    "instanceState": "running"
+   },
+   "nodeRef": {
+    "kind": "Node",
+    "name": "ip-10-0-0-0.us-east-2.compute.internal"
+   }
+  }
+ },
+ {
+  "metadata": {
+   "name": "ocp-abc12-master-1",
+   "labels": {
+    "machine.openshift.io/cluster-api-machine-role": "master",
+    "machine.openshift.io/cluster-api-machine-type": "master"
+   }
+  },
+  "spec": {
+   "providerSpec": {
+    "value": {
+     "instanceType": "m6a.2xlarge",
+     "placement": {
+      "region": "us-east-2",
+      "availabilityZone": "us-east-2a"
+     }
+    }
+   }
+  },
+  "status": {
+   "phase": "Running",
+   "providerStatus": {
+    "instanceId": "i-0bbb1",
+    "instanceState": "running"
+   },
+   "nodeRef": {
+    "kind": "Node",
+    "name": "ip-10-0-0-1.us-east-2.compute.internal"
+   }
+  }
+ },
+ {
+  "metadata": {
+   "name": "ocp-abc12-master-2",
+   "labels": {
+    "machine.openshift.io/cluster-api-machine-role": "master",
+    "machine.openshift.io/cluster-api-machine-type": "master"
+   }
+  },
+  "spec": {
+   "providerSpec": {
+    "value": {
+     "instanceType": "m6a.2xlarge",
+     "placement": {
+      "region": "us-east-2",
+      "availabilityZone": "us-east-2a"
+     }
+    }
+   }
+  },
+  "status": {
+   "phase": "Running",
+   "providerStatus": {
+    "instanceId": "i-0bbb2",
+    "instanceState": "running"
+   },
+   "nodeRef": {
+    "kind": "Node",
+    "name": "ip-10-0-0-2.us-east-2.compute.internal"
+   }
+  }
+ },
+ {
+  "metadata": {
+   "name": "ocp-abc12-worker-us-east-2a-xyz1",
+   "labels": {
+    "machine.openshift.io/cluster-api-machine-role": "worker",
+    "machine.openshift.io/cluster-api-machine-type": "worker"
+   }
+  },
+  "spec": {
+   "providerSpec": {
+    "value": {
+     "instanceType": "m7i.2xlarge",
+     "placement": {
+      "region": "us-east-2",
+      "availabilityZone": "us-east-2a"
+     }
+    }
+   }
+  },
+  "status": {
+   "phase": "Running",
+   "providerStatus": {
+    "instanceId": "i-0aaa1",
+    "instanceState": "running"
+   },
+   "nodeRef": {
+    "kind": "Node",
+    "name": "ip-10-0-1-1.us-east-2.compute.internal"
+   }
+  }
+ },
+ {
+  "metadata": {
+   "name": "ocp-abc12-worker-us-east-2a-xyz2",
+   "labels": {
+    "machine.openshift.io/cluster-api-machine-role": "worker",
+    "machine.openshift.io/cluster-api-machine-type": "worker"
+   }
+  },
+  "spec": {
+   "providerSpec": {
+    "value": {
+     "instanceType": "m7i.2xlarge",
+     "placement": {
+      "region": "us-east-2",
+      "availabilityZone": "us-east-2a"
+     }
+    }
+   }
+  },
+  "status": {
+   "phase": "Running",
+   "providerStatus": {
+    "instanceId": "i-0aaa2",
+    "instanceState": "running"
+   },
+   "nodeRef": {
+    "kind": "Node",
+    "name": "ip-10-0-1-2.us-east-2.compute.internal"
+   }
+  }
+ },
+ {
+  "metadata": {
+   "name": "ocp-abc12-infra-us-east-2a-inf1",
+   "labels": {
+    "machine.openshift.io/cluster-api-machine-role": "infra",
+    "machine.openshift.io/cluster-api-machine-type": "infra"
+   }
+  },
+  "spec": {
+   "providerSpec": {
+    "value": {
+     "instanceType": "m7i.2xlarge",
+     "placement": {
+      "region": "us-east-2",
+      "availabilityZone": "us-east-2a"
+     }
+    }
+   }
+  },
+  "status": {
+   "phase": "Running",
+   "providerStatus": {
+    "instanceId": "i-0ccc1",
+    "instanceState": "running"
+   },
+   "nodeRef": {
+    "kind": "Node",
+    "name": "ip-10-0-2-1.us-east-2.compute.internal"
+   }
+  }
+ }
+]

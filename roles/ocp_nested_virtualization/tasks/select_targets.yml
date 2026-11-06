@@ -1,0 +1,18 @@
+---
+# Input: _nv_describe (parsed output of aws ec2 describe-instances)
+# Output:
+#   _nv_targets: instances that do not have nested virtualization enabled
+#   _nv_stopped: instances that have it enabled but are stopped or stopping,
+#                for example after an earlier failed run; they must be started
+- name: Select instances without nested virtualization and stopped enabled instances
+  ansible.builtin.set_fact:
+    _nv_targets: >-
+      {{ _nv_describe | json_query(
+         "Reservations[].Instances[] | [?CpuOptions.NestedVirtualization != 'enabled'].{
+         instance_id: InstanceId,
+         core_count: CpuOptions.CoreCount,
+         threads_per_core: CpuOptions.ThreadsPerCore}") }}
+    _nv_stopped: >-
+      {{ _nv_describe | json_query(
+         "Reservations[].Instances[] | [?CpuOptions.NestedVirtualization == 'enabled'
+         && (State.Name == 'stopped' || State.Name == 'stopping')].InstanceId") }}

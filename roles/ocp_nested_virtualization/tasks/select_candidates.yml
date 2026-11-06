@@ -1,0 +1,16 @@
+---
+# Input: _nv_machines (list of Machine resources)
+# Output: _nv_candidates, _nv_region, _nv_not_ready, _nv_failed
+- name: Select worker Machines
+  ansible.builtin.set_fact:
+    _nv_worker_machines: "{{ _nv_machines | json_query(_nv_q_workers) }}"
+
+- name: Select candidate, not ready, and failed worker Machines
+  ansible.builtin.set_fact:
+    _nv_candidates: "{{ _nv_worker_machines | json_query(_nv_q_candidates) }}"
+    _nv_not_ready: "{{ _nv_worker_machines | json_query(_nv_q_not_ready) }}"
+    _nv_failed: "{{ _nv_worker_machines | json_query(_nv_q_failed) }}"
+
+- name: Set region from the candidate Machines
+  ansible.builtin.set_fact:
+    _nv_region: "{{ _nv_candidates | map(attribute='region') | first | default('') }}"

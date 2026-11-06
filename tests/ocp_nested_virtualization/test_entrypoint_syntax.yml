@@ -1,0 +1,8 @@
+---
+# Syntax check for the role entry point.
+# Run: ansible-playbook --syntax-check tests/ocp_nested_virtualization/test_entrypoint_syntax.yml
+- name: Include the ocp_nested_virtualization role
+  hosts: localhost
+  gather_facts: false
+  roles:
+  - role: ../../roles/ocp_nested_virtualization

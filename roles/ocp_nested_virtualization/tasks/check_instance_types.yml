@@ -1,0 +1,21 @@
+---
+# Input: _nv_describe_types (parsed output of aws ec2 describe-instance-types)
+# Output: _nv_unsupported_types; fails if not empty
+- name: Find instance types without nested virtualization support
+  ansible.builtin.set_fact:
+    _nv_unsupported_types: >-
+      {{ _nv_describe_types | json_query(
+         "InstanceTypes[?!contains(ProcessorInfo.SupportedFeatures || `[]`, 'nested-virtualization')].InstanceType")
+         | sort }}
+
+- name: Fail if any worker instance type does not support nested virtualization
+  when: _nv_unsupported_types | length > 0
+  ansible.builtin.fail:
+    msg: |-
+      Instance type(s) {{ _nv_unsupported_types | join(', ') }} do not support nested virtualization.
+      AWS supports the nested virtualization flag on Intel instances only
+      (for example m7i, m8i, c7i, r7i); AMD types such as m5a and m6a cannot
+      get it, and OpenShift Virtualization VMs stay Pending on them because
+      the nodes have no /dev/kvm.
+      Fix this order by setting worker_instance_type to a supported Intel
+      type (for example m7i.2xlarge).

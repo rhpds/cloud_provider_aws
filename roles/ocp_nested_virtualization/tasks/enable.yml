@@ -1,0 +1,66 @@
+---
+# Input: _nv_targets, _nv_stopped (from select_targets.yml); credentials and
+# region from aws.yml
+# Output: _nv_enabled_ids
+- name: Set target and start instance IDs
+  ansible.builtin.set_fact:
+    _nv_enabled_ids: "{{ _nv_targets | map(attribute='instance_id') | list }}"
+    _nv_start_ids: "{{ (_nv_targets | map(attribute='instance_id') | list + _nv_stopped | default([])) | unique }}"
+
+- name: Stop all target instances
+  when: _nv_enabled_ids | length > 0
+  ansible.builtin.command:
+    argv: "{{ _nv_aws + ['ec2', 'stop-instances', '--instance-ids'] + _nv_enabled_ids }}"
+  changed_when: true
+
+- name: Wait for instances to be stopped
+  ansible.builtin.command:
+    argv: "{{ _nv_aws + ['ec2', 'wait', 'instance-stopped', '--instance-ids'] + _nv_start_ids }}"
+  changed_when: false
+
+- name: Enable nested virtualization on each target instance
+  ansible.builtin.command:
+    argv: >-
+      {{ _nv_aws + ['ec2', 'modify-instance-cpu-options',
+         '--instance-id', item.instance_id,
+         '--core-count', item.core_count | string,
+         '--threads-per-core', item.threads_per_core | string,
+         '--nested-virtualization', 'enabled'] }}
+  loop: "{{ _nv_targets }}"
+  loop_control:
+    label: "{{ item.instance_id }}"
+  changed_when: true
+
+# A stop/start can land on a new host; retry only on capacity errors
+- name: Start all instances
+  ansible.builtin.command:
+    argv: "{{ _nv_aws + ['ec2', 'start-instances', '--instance-ids'] + _nv_start_ids }}"
+  register: r_nv_start
+  until: r_nv_start.rc == 0 or 'InsufficientInstanceCapacity' not in r_nv_start.stderr
+  retries: "{{ nested_virt_start_retries | int }}"
+  delay: "{{ nested_virt_start_delay | int }}"
+  failed_when: r_nv_start.rc != 0
+  changed_when: true
+
+- name: Wait for instances to be running
+  ansible.builtin.command:
+    argv: "{{ _nv_aws + ['ec2', 'wait', 'instance-running', '--instance-ids'] + _nv_start_ids }}"
+  changed_when: false
+
+- name: Describe instances after the restart
+  ansible.builtin.command:
+    argv: "{{ _nv_aws + ['ec2', 'describe-instances', '--instance-ids'] + _nv_start_ids + ['--output', 'json'] }}"
+  register: r_nv_describe_after
+  changed_when: false
+
+- name: Check nested virtualization on restarted instances
+  ansible.builtin.include_tasks: select_targets.yml
+  vars:
+    _nv_describe: "{{ r_nv_describe_after.stdout | from_json }}"
+
+- name: Fail if any instance does not show nested virtualization enabled
+  when: _nv_targets | length > 0
+  ansible.builtin.fail:
+    msg: >-
+      Nested virtualization is not enabled on instance(s)
+      {{ _nv_targets | map(attribute='instance_id') | join(', ') }} after the restart

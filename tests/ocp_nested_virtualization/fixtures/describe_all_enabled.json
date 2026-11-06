@@ -1,0 +1,30 @@
+{
+ "Reservations": [
+  {
+   "Instances": [
+    {
+     "InstanceId": "i-0aaa1",
+     "State": {
+      "Name": "running"
+     },
+     "CpuOptions": {
+      "CoreCount": 4,
+      "ThreadsPerCore": 2,
+      "NestedVirtualization": "enabled"
+     }
+    },
+    {
+     "InstanceId": "i-0aaa2",
+     "State": {
+      "Name": "running"
+     },
+     "CpuOptions": {
+      "CoreCount": 4,
+      "ThreadsPerCore": 2,
+      "NestedVirtualization": "enabled"
+     }
+    }
+   ]
+  }
+ ]
+}
