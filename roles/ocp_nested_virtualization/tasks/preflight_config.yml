@@ -1,0 +1,114 @@
+---
+# Early order-time check for openshift_aws_nested_virtualization_enable.
+# Called from the openshift-cluster config's pre_infra phase (before the
+# CloudFormation stack is created) and from scale_ocp_workers (before new
+# machines are created), so a bad order fails in minutes instead of after
+# the cluster is deployed. No cluster access is needed.
+#
+# Inputs:
+#   worker_instance_count         workers the order will have
+#   _nv_preflight_instance_type   type to check; defaults to
+#                                 worker_instance_type
+#   _nv_preflight_region          defaults to aws_region, then us-east-1
+# AWS credentials: the scoped aws_nested_virt_* keys when they are defined
+# (scale path); otherwise aws_access_key_id/aws_secret_access_key or the
+# environment (deployer credentials, pre_infra path).
+
+- name: Fail when the order has no workers
+  when: worker_instance_count | default(0) | int < 1
+  ansible.builtin.fail:
+    msg: |-
+      openshift_aws_nested_virtualization_enable is true but worker_instance_count is {{ worker_instance_count | default(0) | int }}.
+      AWS nested virtualization can only be enabled on worker instances.
+      Control-plane nodes (including single-node OpenShift) cannot get it:
+      the default AWS control-plane family m6a is AMD, and AWS supports the
+      nested virtualization flag on Intel instances only.
+      Without workers, OpenShift Virtualization VMs stay Pending because no
+      node has /dev/kvm.
+      Fix this order by doing one of the following:
+      - Set worker_instance_count to at least 1 and worker_instance_type to a
+        supported Intel type (for example m7i.2xlarge); or
+      - Set openshift_aws_nested_virtualization_enable to false and set
+        ocp4_workload_openshift_virtualization_enabled_nested_kvm to true to
+        run VMs with QEMU software emulation (slower, but works on any node,
+        including single-node OpenShift).
+
+- name: Fail when the worker instance type is not known
+  when: _nv_preflight_instance_type | default(worker_instance_type | default('')) | length == 0
+  ansible.builtin.fail:
+    msg: |-
+      openshift_aws_nested_virtualization_enable is true but no worker instance type is set.
+      The pre-flight check cannot verify that the workers support nested
+      virtualization.
+      Fix this order by setting worker_instance_type to a supported Intel type
+      (for example m7i.2xlarge).
+
+- name: Set the instance type to check
+  ansible.builtin.set_fact:
+    _nv_preflight_type: "{{ _nv_preflight_instance_type | default(worker_instance_type | default('')) }}"
+
+- name: Check the instance type with the scoped credentials
+  when: aws_nested_virt_access_key_id | default('', true) | length > 0
+  block:
+  - name: Create a temporary AWS credentials file
+    ansible.builtin.tempfile:
+      state: file
+      suffix: -nested-virt-preflight-credentials
+    register: r_nv_preflight_credentials_file
+
+  - name: Set the credentials file path
+    ansible.builtin.set_fact:
+      _nv_preflight_credentials_file: "{{ r_nv_preflight_credentials_file.path }}"
+
+  - name: Write the scoped credentials
+    no_log: true
+    ansible.builtin.copy:
+      dest: "{{ _nv_preflight_credentials_file }}"
+      mode: "0600"
+      content: |
+        [{{ _nv_aws_profile }}]
+        aws_access_key_id = {{ aws_nested_virt_access_key_id }}
+        aws_secret_access_key = {{ aws_nested_virt_secret_access_key }}
+
+  - name: Describe the worker instance type
+    environment:
+      AWS_SHARED_CREDENTIALS_FILE: "{{ _nv_preflight_credentials_file }}"
+      AWS_DEFAULT_REGION: "{{ _nv_preflight_region | default(aws_region | default('us-east-1')) }}"
+    ansible.builtin.command:
+      argv: >-
+        {{ _nv_aws + ['ec2', 'describe-instance-types', '--instance-types',
+           _nv_preflight_type, '--output', 'json'] }}
+    register: r_nv_preflight_describe
+    changed_when: false
+
+  - name: Check the worker instance type supports nested virtualization
+    ansible.builtin.include_tasks: check_instance_types.yml
+    vars:
+      _nv_describe_types: "{{ r_nv_preflight_describe.stdout | from_json }}"
+
+  always:
+  - name: Remove the temporary AWS credentials file
+    when: _nv_preflight_credentials_file is defined
+    ansible.builtin.file:
+      path: "{{ _nv_preflight_credentials_file }}"
+      state: absent
+
+- name: Check the instance type with the deployer credentials
+  when: aws_nested_virt_access_key_id | default('', true) | length == 0
+  block:
+  - name: Describe the worker instance type
+    environment:
+      AWS_ACCESS_KEY_ID: "{{ aws_access_key_id | default(lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID'), true) }}"
+      AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key | default(lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY'), true) }}"
+      AWS_DEFAULT_REGION: "{{ _nv_preflight_region | default(aws_region | default('us-east-1')) }}"
+    ansible.builtin.command:
+      argv: >-
+        {{ ['aws', 'ec2', 'describe-instance-types', '--instance-types',
+           _nv_preflight_type, '--output', 'json'] }}
+    register: r_nv_preflight_describe_deployer
+    changed_when: false
+
+  - name: Check the worker instance type supports nested virtualization
+    ansible.builtin.include_tasks: check_instance_types.yml
+    vars:
+      _nv_describe_types: "{{ r_nv_preflight_describe_deployer.stdout | from_json }}"

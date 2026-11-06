@@ -1,4 +1,4 @@
-# nested_virtualization
+# ocp_nested_virtualization
 
 Turns on EC2 nested virtualization on an OpenShift cluster's AWS worker
 instances, so OpenShift Virtualization uses `/dev/kvm` instead of software
@@ -17,7 +17,7 @@ It is called by:
 ```yaml
 - name: Enable nested virtualization on worker instances
   ansible.builtin.include_role:
-    name: agnosticd.cloud_provider_aws.nested_virtualization
+    name: agnosticd.cloud_provider_aws.ocp_nested_virtualization
 ```
 
 - `aws_nested_virt_access_key_id` and `aws_nested_virt_secret_access_key`
@@ -38,5 +38,27 @@ It is called by:
   Instances left stopped by an earlier failed run are started again.
 - Machines created later (scaling MachineSets, autoscaler, replacements) do
   not get nested virtualization.
+
+## Pre-flight check
+
+`preflight_config.yml` is an order-time check that needs no cluster access.
+It runs in the `openshift-cluster` config's `pre_infra` phase (before the
+CloudFormation stack is created) and at the top of `scale_ocp_workers`
+(before new machines are created), so a bad order fails in minutes instead
+of after the cluster is deployed. It checks that `worker_instance_count` is
+at least 1 and that the worker instance type has the AWS
+`nested-virtualization` feature (`aws ec2 describe-instance-types`), and
+fails with a message that says how to fix the order, including the QEMU
+emulation option for single-node or workerless clusters.
+
+```yaml
+- name: Check nested virtualization prerequisites
+  ansible.builtin.include_role:
+    name: agnosticd.cloud_provider_aws.ocp_nested_virtualization
+    tasks_from: preflight_config.yml
+```
+
+It uses the scoped `aws_nested_virt_*` credentials when they are defined
+(scale path) and the deployer credentials otherwise (pre_infra path).
 
 See [defaults/main.yml](defaults/main.yml) for timeouts.
