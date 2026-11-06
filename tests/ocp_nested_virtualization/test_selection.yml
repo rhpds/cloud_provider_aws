@@ -1,13 +1,13 @@
 ---
-# Tests the nested_virtualization role's selection and pre-flight logic with
+# Tests the ocp_nested_virtualization role's selection and pre-flight logic with
 # fixture JSON. No cluster or AWS access needed.
-# Run: ansible-playbook tests/nested_virtualization/test_selection.yml
-- name: Test nested_virtualization selection and pre-flight logic
+# Run: ansible-playbook tests/ocp_nested_virtualization/test_selection.yml
+- name: Test ocp_nested_virtualization selection and pre-flight logic
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
-    _role: "{{ playbook_dir }}/../../roles/nested_virtualization"
+    _role: "{{ playbook_dir }}/../../roles/ocp_nested_virtualization"
     _fixtures: "{{ playbook_dir }}/fixtures"
   tasks:
   # ---------------------------------------------------------------- candidates

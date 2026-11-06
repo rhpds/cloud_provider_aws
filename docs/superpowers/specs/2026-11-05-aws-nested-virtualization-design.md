@@ -111,14 +111,14 @@ openshift-cluster (direct or pool)
   post_infra.yml       ─ reads its keys from stack outputs, saves them as facts
                          and in provision data (agnosticd_user_data)
   post_software.yml    ─ if openshift_aws_nested_virtualization_enable:
-                         include agnosticd.cloud_provider_aws.nested_virtualization
+                         include agnosticd.cloud_provider_aws.ocp_nested_virtualization
                          (before workloads)
 
 orderable CI (openshift-workloads, cloud_provider: none)
   propagate_provision_data ─ aws_nested_virt_* keys from the pool component
   pre_infra.yml → scale_ocp_workers ─ adds workers, waits for Ready, then
                          if openshift_aws_nested_virtualization_enable:
-                         include agnosticd.cloud_provider_aws.nested_virtualization
+                         include agnosticd.cloud_provider_aws.ocp_nested_virtualization
 ```
 
 Both paths call the same role with the same scoped credentials.
@@ -187,7 +187,7 @@ instance IDs from the cluster itself (see the role steps), because in the
 `openshift-workloads` path `guid` is the orderable CI's own guid, not the
 pool's, and `ocp-field-asset-aws` does not propagate `aws_region`.
 
-### The role: `agnosticd.cloud_provider_aws.nested_virtualization` (decided outline)
+### The role: `agnosticd.cloud_provider_aws.ocp_nested_virtualization` (decided outline)
 
 New role in this collection, next to `scale_ocp_workers`. Runs on
 localhost. Inputs: `aws_nested_virt_access_key_id`,

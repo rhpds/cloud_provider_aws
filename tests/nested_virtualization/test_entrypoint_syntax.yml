@@ -1,8 +1,0 @@
----
-# Syntax check for the role entry point.
-# Run: ansible-playbook --syntax-check tests/nested_virtualization/test_entrypoint_syntax.yml
-- name: Include the nested_virtualization role
-  hosts: localhost
-  gather_facts: false
-  roles:
-  - role: ../../roles/nested_virtualization

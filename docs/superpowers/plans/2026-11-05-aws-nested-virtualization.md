@@ -4,7 +4,7 @@
 
 **Goal:** An opt-in AgnosticV variable, `openshift_aws_nested_virtualization_enable`, that turns on EC2 nested virtualization on an AWS OpenShift cluster's worker instances. It works in both the direct `openshift-cluster` path and the pool + `scale_ocp_workers` path, and it fails the provision if any worker ends up without `/dev/kvm`.
 
-**Architecture:** Every `openshift-cluster` AWS stack creates a scoped IAM user. It can only stop, start, and modify CPU options on this cluster's `*-worker-*` instances. Its keys go into provision data. A new role, `agnosticd.cloud_provider_aws.nested_virtualization`, reads the worker Machines from the cluster and stops every target at once. It sets `NestedVirtualization=enabled`, starts the targets, and then checks `/dev/kvm` with one short-lived pod per node. `openshift-cluster/post_software.yml` calls the role in the direct path. `scale_ocp_workers` calls it in the scale path, and there `worker_only` follows the new variable.
+**Architecture:** Every `openshift-cluster` AWS stack creates a scoped IAM user. It can only stop, start, and modify CPU options on this cluster's `*-worker-*` instances. Its keys go into provision data. A new role, `agnosticd.cloud_provider_aws.ocp_nested_virtualization`, reads the worker Machines from the cluster and stops every target at once. It sets `NestedVirtualization=enabled`, starts the targets, and then checks `/dev/kvm` with one short-lived pod per node. `openshift-cluster/post_software.yml` calls the role in the direct path. `scale_ocp_workers` calls it in the scale path, and there `worker_only` follows the new variable.
 
 **Tech Stack:** Ansible (`kubernetes.core` k8s modules), the AWS CLI v2 called through `ansible.builtin.command` in the `ee-multicloud` EE, CloudFormation (Jinja template), and AgnosticV YAML.
 
@@ -159,18 +159,18 @@ git commit -m "[GPTEINFRA-18454] Add scoped nested virt IAM user to the AWS stac
 
 ---
 
-### Task 3: `nested_virtualization` role — selection and pre-flight logic
+### Task 3: `ocp_nested_virtualization` role — selection and pre-flight logic
 
 The decision logic lives in task files that turn input facts into output facts, so localhost playbooks can test it with fixture JSON and no cluster or AWS.
 
 **Files:**
-- Create: `cloud_provider_aws/roles/nested_virtualization/defaults/main.yml`
-- Create: `cloud_provider_aws/roles/nested_virtualization/meta/main.yml` (copy the shape from `scale_ocp_workers` if it has one, otherwise a minimal `galaxy_info`)
-- Create: `cloud_provider_aws/roles/nested_virtualization/tasks/select_candidates.yml`
-- Create: `cloud_provider_aws/roles/nested_virtualization/tasks/select_targets.yml`
-- Create: `cloud_provider_aws/roles/nested_virtualization/tasks/check_instance_types.yml`
-- Create: `cloud_provider_aws/roles/nested_virtualization/tasks/preflight_keys.yml`
-- Create: `cloud_provider_aws/tests/nested_virtualization/test_selection.yml` and `tests/nested_virtualization/fixtures/*.json` (sanitized: fake IDs like `i-0aaa...`, cluster `ocp-abc12`, region `us-east-2`)
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/defaults/main.yml`
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/meta/main.yml` (copy the shape from `scale_ocp_workers` if it has one, otherwise a minimal `galaxy_info`)
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/tasks/select_candidates.yml`
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/tasks/select_targets.yml`
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/tasks/check_instance_types.yml`
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/tasks/preflight_keys.yml`
+- Create: `cloud_provider_aws/tests/ocp_nested_virtualization/test_selection.yml` and `tests/ocp_nested_virtualization/fixtures/*.json` (sanitized: fake IDs like `i-0aaa...`, cluster `ocp-abc12`, region `us-east-2`)
 
 **Interfaces:**
 - Consumes: `aws_nested_virt_access_key_id`, `aws_nested_virt_secret_access_key` (role inputs).
@@ -183,7 +183,7 @@ The decision logic lives in task files that turn input facts into output facts, 
 
 - [ ] **Step 1: Write the failing tests**
 
-`test_selection.yml` runs on localhost and calls `include_role: name=agnosticd.cloud_provider_aws.nested_virtualization tasks_from=<file>`. Run it with `ANSIBLE_COLLECTIONS_PATH` pointing at a parent of an `ansible_collections/agnosticd/cloud_provider_aws` symlink to the repo, or use `ANSIBLE_ROLES_PATH=roles` and plain role name `nested_virtualization`. Pick one and document it in the playbook header. Each case is a block with `rescue` for the expected failures:
+`test_selection.yml` runs on localhost and calls `include_role: name=agnosticd.cloud_provider_aws.ocp_nested_virtualization tasks_from=<file>`. Run it with `ANSIBLE_COLLECTIONS_PATH` pointing at a parent of an `ansible_collections/agnosticd/cloud_provider_aws` symlink to the repo, or use `ANSIBLE_ROLES_PATH=roles` and plain role name `ocp_nested_virtualization`. Pick one and document it in the playbook header. Each case is a block with `rescue` for the expected failures:
 - `test_candidates_basic`: 2 Running workers with nodeRef, 3 master Machines, and 1 `infra` role Machine. Assert `_nv_candidates | map(attribute='instance_id') | sort == ['i-0aaa1', 'i-0aaa2']`, `_nv_region == 'us-east-2'`, and that `node` comes from `status.nodeRef.name`.
 - `test_candidates_not_ready`: 1 Running and 1 `Provisioned` without a nodeRef. Assert `_nv_not_ready == ['ocp-abc12-worker-us-east-2a-xyz2']`.
 - `test_candidates_failed`: 1 Machine in `Failed`. Assert `_nv_failed` lists it.
@@ -196,37 +196,37 @@ The decision logic lives in task files that turn input facts into output facts, 
 
 - [ ] **Step 2: Run them and confirm they fail**
 
-Run: `ansible-playbook tests/nested_virtualization/test_selection.yml`
+Run: `ansible-playbook tests/ocp_nested_virtualization/test_selection.yml`
 Expected: FAIL. The role or task files are missing.
 
 - [ ] **Step 3: Write the four task files and `defaults/main.yml`** using the fact names and messages above. Use `selectattr` and `json_query` like the existing roles. `select_candidates.yml` filters on `metadata.labels['machine.openshift.io/cluster-api-machine-role'] == 'worker'` and doesn't decide whether to wait. Task 4 owns the wait loop.
 
 - [ ] **Step 4: Run the tests and lint**
 
-Run: `ansible-playbook tests/nested_virtualization/test_selection.yml && tox -c tests/static`
+Run: `ansible-playbook tests/ocp_nested_virtualization/test_selection.yml && tox -c tests/static`
 Expected: every case passes, and lint is clean.
 
 - [ ] **Step 5: Commit** (confirm the Jira key)
 
 ```bash
-git add roles/nested_virtualization tests/nested_virtualization
+git add roles/ocp_nested_virtualization tests/ocp_nested_virtualization
 git commit -m "[GPTEINFRA-18454] Add nested virt role target selection and pre-flight checks"
 ```
 
 ---
 
-### Task 4: `nested_virtualization` role — AWS actions, `/dev/kvm` verification, entry point
+### Task 4: `ocp_nested_virtualization` role — AWS actions, `/dev/kvm` verification, entry point
 
 **Files:**
-- Create: `cloud_provider_aws/roles/nested_virtualization/tasks/main.yml`
-- Create: `cloud_provider_aws/roles/nested_virtualization/tasks/enable.yml` (stop, modify, start)
-- Create: `cloud_provider_aws/roles/nested_virtualization/tasks/wait_for_nodes.yml`
-- Create: `cloud_provider_aws/roles/nested_virtualization/tasks/verify_kvm.yml`
-- Create: `cloud_provider_aws/roles/nested_virtualization/README.md` (short: purpose, the two callers, inputs, the "keep auth from caller" note, the non-goal that new machines are not covered)
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/tasks/main.yml`
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/tasks/enable.yml` (stop, modify, start)
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/tasks/wait_for_nodes.yml`
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/tasks/verify_kvm.yml`
+- Create: `cloud_provider_aws/roles/ocp_nested_virtualization/README.md` (short: purpose, the two callers, inputs, the "keep auth from caller" note, the non-goal that new machines are not covered)
 
 **Interfaces:**
 - Consumes: the Task 3 facts and messages, and the caller's k8s auth (`module_defaults` or `KUBECONFIG`).
-- Produces: the role entry point `agnosticd.cloud_provider_aws.nested_virtualization`, with required vars `aws_nested_virt_access_key_id` and `aws_nested_virt_secret_access_key`. Tasks 5 and 6 include it.
+- Produces: the role entry point `agnosticd.cloud_provider_aws.ocp_nested_virtualization`, with required vars `aws_nested_virt_access_key_id` and `aws_nested_virt_secret_access_key`. Tasks 5 and 6 include it.
 
 `main.yml` order (one task or include per line):
 1. `preflight_keys.yml`
@@ -260,18 +260,18 @@ All `aws` commands run through `ansible.builtin.command` with `environment: {AWS
 
 - [ ] **Step 5: Syntax check and lint**
 
-Run: `ansible-playbook tests/nested_virtualization/test_selection.yml && ansible-playbook --syntax-check tests/nested_virtualization/test_entrypoint_syntax.yml && tox -c tests/static`. The last playbook is a two-line play that includes the role, created in this step.
+Run: `ansible-playbook tests/ocp_nested_virtualization/test_selection.yml && ansible-playbook --syntax-check tests/ocp_nested_virtualization/test_entrypoint_syntax.yml && tox -c tests/static`. The last playbook is a two-line play that includes the role, created in this step.
 Expected: everything passes and lint is clean. Task 8 runs this role against a real cluster.
 
 - [ ] **Step 6: Secret check**
 
-Run: `grep -rn "secret_access_key" roles/nested_virtualization`
+Run: `grep -rn "secret_access_key" roles/ocp_nested_virtualization`
 Expected: the only matches are in `preflight_keys.yml`, `defaults` or README comments, and `environment:` values. None appears in a `debug`, `msg`, or `fail` text.
 
 - [ ] **Step 7: Commit** (confirm the Jira key)
 
 ```bash
-git add roles/nested_virtualization tests/nested_virtualization
+git add roles/ocp_nested_virtualization tests/ocp_nested_virtualization
 git commit -m "[GPTEINFRA-18454] Enable nested virt on workers and verify /dev/kvm per node"
 ```
 
@@ -285,7 +285,7 @@ git commit -m "[GPTEINFRA-18454] Enable nested virt on workers and verify /dev/k
 - Modify: `cloud_provider_aws/roles/scale_ocp_workers/README.md` (one short "Nested virtualization" usage example)
 
 **Interfaces:**
-- Consumes: the `agnosticd.cloud_provider_aws.nested_virtualization` entry point from Task 4.
+- Consumes: the `agnosticd.cloud_provider_aws.ocp_nested_virtualization` entry point from Task 4.
 - Produces: `openshift_aws_nested_virtualization_enable` (default `false`) and `worker_only: "{{ openshift_aws_nested_virtualization_enable | bool }}"`.
 
 - [ ] **Step 1: Defaults.** Add `openshift_aws_nested_virtualization_enable: false` with a comment. Change `worker_only` to `"{{ openshift_aws_nested_virtualization_enable | bool }}"`, and say in its comment that it follows nested virtualization and that a CI can override it.
@@ -295,12 +295,12 @@ git commit -m "[GPTEINFRA-18454] Enable nested virt on workers and verify /dev/k
   - name: Enable nested virtualization on worker instances
     when: openshift_aws_nested_virtualization_enable | bool
     ansible.builtin.include_role:
-      name: agnosticd.cloud_provider_aws.nested_virtualization
+      name: agnosticd.cloud_provider_aws.ocp_nested_virtualization
 ```
 
 - [ ] **Step 3: Check that `worker_only` resolves**
 
-Add a case to `tests/nested_virtualization/test_selection.yml`, or create a small `tests/scale_ocp_workers/test_worker_only_default.yml`, that loads `roles/scale_ocp_workers/defaults/main.yml`. Assert `worker_only | bool` is `false` by default, `true` with `openshift_aws_nested_virtualization_enable: true`, and `false` with the variable `true` plus `worker_only: false` as an extra var.
+Add a case to `tests/ocp_nested_virtualization/test_selection.yml`, or create a small `tests/scale_ocp_workers/test_worker_only_default.yml`, that loads `roles/scale_ocp_workers/defaults/main.yml`. Assert `worker_only | bool` is `false` by default, `true` with `openshift_aws_nested_virtualization_enable: true`, and `false` with the variable `true` plus `worker_only: false` as an extra var.
 Run: `ansible-playbook tests/scale_ocp_workers/test_worker_only_default.yml && tox -c tests/static`
 Expected: PASS, and lint is clean.
 
@@ -356,7 +356,7 @@ Don't add them to the "Debug Route53 variables" loop.
     - cloud_provider == 'aws'
     - openshift_aws_nested_virtualization_enable | default(false) | bool
     ansible.builtin.include_role:
-      name: agnosticd.cloud_provider_aws.nested_virtualization
+      name: agnosticd.cloud_provider_aws.ocp_nested_virtualization
 ```
 
 - [ ] **Step 4: Check syntax, lint, and secrets**

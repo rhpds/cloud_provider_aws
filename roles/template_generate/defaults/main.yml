@@ -6,7 +6,7 @@ cloudformation_template_src: "templates/cloud_template.yaml.j2"
 # Create a scoped IAM user (NestedVirtUser) that can only stop, start, and
 # modify CPU options on this cluster's worker instances (tag guid=<guid> and
 # Name=*-worker-*). Its keys are stack outputs, used by the
-# nested_virtualization role. Set to true by the openshift-cluster config.
+# ocp_nested_virtualization role. Set to true by the openshift-cluster config.
 aws_nested_virt_iam_user_create: false
 
 #################################################################

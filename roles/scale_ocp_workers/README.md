@@ -55,7 +55,7 @@ Scale to 3 workers with nested virtualization (OpenShift Virtualization with `/d
 ```
 
 The new workers get nested virtualization through the
-[nested_virtualization](../nested_virtualization/README.md) role, and
+[ocp_nested_virtualization](../ocp_nested_virtualization/README.md) role, and
 `worker_only` turns on by default so VMs only run on those workers.
 The cluster's provision data must include `aws_nested_virt_access_key_id`
 and `aws_nested_virt_secret_access_key`.

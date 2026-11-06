@@ -1,14 +1,14 @@
 ---
 # Tests enable.yml (stop, modify, start, confirm) against a fake AWS CLI.
-# Run: ansible-playbook tests/nested_virtualization/test_enable.yml
-- name: Test nested_virtualization enable.yml
+# Run: ansible-playbook tests/ocp_nested_virtualization/test_enable.yml
+- name: Test ocp_nested_virtualization enable.yml
   hosts: localhost
   connection: local
   gather_facts: false
   environment:
     PATH: "{{ playbook_dir }}/bin:{{ ansible_env.PATH | default(lookup('ansible.builtin.env', 'PATH')) }}"
   vars:
-    _role: "{{ playbook_dir }}/../../roles/nested_virtualization"
+    _role: "{{ playbook_dir }}/../../roles/ocp_nested_virtualization"
     _fixtures: "{{ playbook_dir }}/fixtures"
     _log: "{{ playbook_dir }}/fake_aws.log"
     nested_virt_start_delay: 0

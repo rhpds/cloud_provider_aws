@@ -81,7 +81,7 @@
   - name: Enable nested virtualization on worker instances
     when: openshift_aws_nested_virtualization_enable | bool
     ansible.builtin.include_role:
-      name: agnosticd.cloud_provider_aws.nested_virtualization
+      name: agnosticd.cloud_provider_aws.ocp_nested_virtualization
 
   - name: Configure worker-only mode
     when: worker_only | default(false) | bool

@@ -1,10 +1,10 @@
 ---
 # Tests aws.yml (credentials file, instance type check, target selection,
 # enable) against a fake AWS CLI.
-# Run: ansible-playbook tests/nested_virtualization/test_aws.yml
-# Secret check: ansible-playbook -vvv tests/nested_virtualization/test_aws.yml | grep -c CHANGEME-SECRET-MARKER
+# Run: ansible-playbook tests/ocp_nested_virtualization/test_aws.yml
+# Secret check: ansible-playbook -vvv tests/ocp_nested_virtualization/test_aws.yml | grep -c CHANGEME-SECRET-MARKER
 #   must print 0
-- name: Test nested_virtualization aws.yml
+- name: Test ocp_nested_virtualization aws.yml
   hosts: localhost
   connection: local
   gather_facts: false
@@ -16,7 +16,7 @@
     FAKE_AWS_DESCRIBE: "{{ playbook_dir }}/fixtures/describe_all_enabled.json"
     FAKE_AWS_DESCRIBE_FIRST: "{{ playbook_dir }}/fixtures/describe_enabled_stopped.json"
   vars:
-    _role: "{{ playbook_dir }}/../../roles/nested_virtualization"
+    _role: "{{ playbook_dir }}/../../roles/ocp_nested_virtualization"
     nested_virt_start_delay: 0
     aws_nested_virt_access_key_id: AKIAEXAMPLE
     aws_nested_virt_secret_access_key: CHANGEME-SECRET-MARKER
