@@ -1,0 +1,160 @@
+---
+# Tests preflight_config.yml (early order-time checks, no cluster access):
+# the worker count and instance type checks, and the AWS feature check
+# against the fake AWS CLI with scoped credentials and with deployer
+# credentials.
+# Run: ansible-playbook tests/ocp_nested_virtualization/test_preflight_config.yml
+- name: Test ocp_nested_virtualization preflight_config.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  environment:
+    PATH: "{{ playbook_dir }}/bin:{{ lookup('ansible.builtin.env', 'PATH') }}"
+    FAKE_AWS_LOG: "{{ playbook_dir }}/fake_aws.log"
+    FAKE_AWS_ENVLOG: "{{ playbook_dir }}/fake_aws_env.log"
+    FAKE_AWS_TYPES: "{{ _t_fake_types | default(playbook_dir + '/fixtures/types_supported.json') }}"
+  vars:
+    _role: "{{ playbook_dir }}/../../roles/ocp_nested_virtualization"
+  tasks:
+  - name: Reset the fake aws logs
+    ansible.builtin.copy:
+      content: ""
+      dest: "{{ item }}"
+      mode: "0644"
+    loop:
+    - "{{ playbook_dir }}/fake_aws.log"
+    - "{{ playbook_dir }}/fake_aws_env.log"
+
+  # ------------------------------------------------------------ no workers
+  - name: test_no_workers - run
+    block:
+    - name: test_no_workers - include
+      ansible.builtin.include_role:
+        name: "{{ _role }}"
+        tasks_from: preflight_config.yml
+      vars:
+        worker_instance_count: 0
+        worker_instance_type: m7i.2xlarge
+    rescue:
+    - name: test_no_workers - capture the failure
+      ansible.builtin.set_fact:
+        _t_no_workers_msg: "{{ ansible_failed_result.msg }}"
+
+  - name: test_no_workers - assert
+    ansible.builtin.assert:
+      that:
+      - "'worker_instance_count is 0' in _t_no_workers_msg"
+      - "'single-node OpenShift' in _t_no_workers_msg"
+      - "'ocp4_workload_openshift_virtualization_enabled_nested_kvm' in _t_no_workers_msg"
+
+  # ------------------------------------------------------- type not known
+  - name: test_no_type - run
+    block:
+    - name: test_no_type - include
+      ansible.builtin.include_role:
+        name: "{{ _role }}"
+        tasks_from: preflight_config.yml
+      vars:
+        worker_instance_count: 2
+        worker_instance_type: ""
+    rescue:
+    - name: test_no_type - capture the failure
+      ansible.builtin.set_fact:
+        _t_no_type_msg: "{{ ansible_failed_result.msg }}"
+
+  - name: test_no_type - assert
+    ansible.builtin.assert:
+      that:
+      - "'no worker instance type is set' in _t_no_type_msg"
+
+  # ------------------------------------------------- scoped, supported type
+  - name: test_scoped_ok - use the supported types fixture
+    ansible.builtin.set_fact:
+      _t_fake_types: "{{ playbook_dir }}/fixtures/types_supported.json"
+
+  - name: test_scoped_ok - run
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: preflight_config.yml
+    vars:
+      worker_instance_count: 2
+      worker_instance_type: m7i.2xlarge
+      aws_region: us-east-2
+      aws_nested_virt_access_key_id: AKIAEXAMPLE
+      aws_nested_virt_secret_access_key: CHANGEME-SECRET-MARKER
+
+  - name: test_scoped_ok - read the fake aws logs
+    ansible.builtin.set_fact:
+      _t_scoped_calls: "{{ lookup('ansible.builtin.file', playbook_dir + '/fake_aws.log').splitlines() }}"
+      _t_scoped_envs: "{{ lookup('ansible.builtin.file', playbook_dir + '/fake_aws_env.log').splitlines() }}"
+
+  - name: test_scoped_ok - assert
+    ansible.builtin.assert:
+      that:
+      - _t_scoped_calls == ['ec2 describe-instance-types --instance-types m7i.2xlarge --output json']
+      - _t_scoped_envs == ['profile=nested-virt envsecret=unset credfile=has-profile perms=600 region=us-east-2']
+
+  # ------------------------------------------- scoped, unsupported type
+  - name: test_scoped_unsupported - use the mixed types fixture
+    ansible.builtin.set_fact:
+      _t_fake_types: "{{ playbook_dir }}/fixtures/types_mixed.json"
+
+  - name: test_scoped_unsupported - run
+    block:
+    - name: test_scoped_unsupported - include
+      ansible.builtin.include_role:
+        name: "{{ _role }}"
+        tasks_from: preflight_config.yml
+      vars:
+        worker_instance_count: 2
+        worker_instance_type: m6a.2xlarge
+        aws_region: us-east-2
+        aws_nested_virt_access_key_id: AKIAEXAMPLE
+        aws_nested_virt_secret_access_key: CHANGEME-SECRET-MARKER
+    rescue:
+    - name: test_scoped_unsupported - capture the failure
+      ansible.builtin.set_fact:
+        _t_unsupported_msg: "{{ ansible_failed_result.msg }}"
+
+  - name: test_scoped_unsupported - assert
+    ansible.builtin.assert:
+      that:
+      - "'m6a.2xlarge' in _t_unsupported_msg"
+      - "'do not support nested virtualization' in _t_unsupported_msg"
+      - "'Fix this order' in _t_unsupported_msg"
+
+  # ------------------------------------------- deployer credentials path
+  - name: test_deployer_ok - use the supported types fixture
+    ansible.builtin.set_fact:
+      _t_fake_types: "{{ playbook_dir }}/fixtures/types_supported.json"
+
+  - name: test_deployer_ok - reset the fake aws logs
+    ansible.builtin.copy:
+      content: ""
+      dest: "{{ item }}"
+      mode: "0644"
+    loop:
+    - "{{ playbook_dir }}/fake_aws.log"
+    - "{{ playbook_dir }}/fake_aws_env.log"
+
+  - name: test_deployer_ok - run
+    ansible.builtin.include_role:
+      name: "{{ _role }}"
+      tasks_from: preflight_config.yml
+    vars:
+      worker_instance_count: 3
+      worker_instance_type: m7i.2xlarge
+      aws_region: us-east-2
+      aws_access_key_id: AKIAEXAMPLE
+      aws_secret_access_key: CHANGEME-SECRET-MARKER
+
+  - name: test_deployer_ok - read the fake aws logs
+    ansible.builtin.set_fact:
+      _t_deployer_calls: "{{ lookup('ansible.builtin.file', playbook_dir + '/fake_aws.log').splitlines() }}"
+      _t_deployer_envs: "{{ lookup('ansible.builtin.file', playbook_dir + '/fake_aws_env.log').splitlines() }}"
+
+  - name: test_deployer_ok - assert
+    ansible.builtin.assert:
+      that:
+      - _t_deployer_calls == ['ec2 describe-instance-types --instance-types m7i.2xlarge --output json']
+      - _t_deployer_envs == ['profile= envsecret=set credfile=missing perms=none region=us-east-2']

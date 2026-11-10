@@ -36,6 +36,15 @@
       existing_instance_type: "{{ r_machinesets[0].spec.template.spec.providerSpec.value.instanceType }}"
       cluster_infrastructure_name: "{{ r_machinesets[0].metadata.labels['machine.openshift.io/cluster-api-cluster'] }}"
 
+  - name: Check nested virtualization prerequisites before scaling
+    when: openshift_aws_nested_virtualization_enable | bool
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_aws.ocp_nested_virtualization
+      tasks_from: preflight_config.yml
+    vars:
+      # Use the requested type; fall back to the existing MachineSet type
+      _nv_preflight_instance_type: "{{ worker_instance_type | default('', true) or existing_instance_type }}"
+
   - name: Get current worker node count
     kubernetes.core.k8s_info:
       api_version: v1
@@ -77,6 +86,11 @@
   - name: Wait for worker nodes to be Ready
     when: worker_instance_count | int > 0
     ansible.builtin.include_tasks: wait_for_nodes.yml
+
+  - name: Enable nested virtualization on worker instances
+    when: openshift_aws_nested_virtualization_enable | bool
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_aws.ocp_nested_virtualization
 
   - name: Configure worker-only mode
     when: worker_only | default(false) | bool

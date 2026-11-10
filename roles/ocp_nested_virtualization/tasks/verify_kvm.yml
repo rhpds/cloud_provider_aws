@@ -1,0 +1,118 @@
+---
+# Input: _nv_candidates
+# Starts one pod per worker node that mounts /dev/kvm as a CharDevice hostPath.
+# The pod only starts if the device exists, so a node passes only when its pod
+# reaches Succeeded.
+- name: Verify /dev/kvm on worker nodes
+  block:
+  - name: Remove a leftover check namespace
+    kubernetes.core.k8s:
+      api_version: v1
+      kind: Namespace
+      name: "{{ nested_virt_kvm_check_namespace }}"
+      state: absent
+      wait: true
+
+  - name: Create the check namespace
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: "{{ nested_virt_kvm_check_namespace }}"
+          labels:
+            pod-security.kubernetes.io/enforce: privileged
+            security.openshift.io/scc.podSecurityLabelSync: "false"
+
+  - name: Get the cli image stream
+    kubernetes.core.k8s_info:
+      api_version: image.openshift.io/v1
+      kind: ImageStream
+      name: cli
+      namespace: openshift
+    register: r_nv_cli_is
+
+  - name: Set the cli image from the release
+    ansible.builtin.set_fact:
+      _nv_cli_image: >-
+        {{ (r_nv_cli_is.resources[0].status.tags | default([])
+            | selectattr('tag', 'equalto', 'latest') | map(attribute='items') | first | default([]))
+           | map(attribute='dockerImageReference') | first | default('') }}
+
+  - name: Fail if the cli image was not found
+    when: _nv_cli_image | length == 0
+    ansible.builtin.fail:
+      msg: Could not find the latest image of the openshift/cli image stream
+
+  - name: Create a /dev/kvm check pod on each worker node
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: "{{ ('kvm-check-' + item.node | lower | regex_replace('[^a-z0-9-]', '-'))[:63] | regex_replace('-+$', '') }}"
+          namespace: "{{ nested_virt_kvm_check_namespace }}"
+          labels:
+            app: nested-virt-kvm-check
+          annotations:
+            openshift.io/required-scc: privileged
+        spec:
+          nodeName: "{{ item.node }}"
+          restartPolicy: Never
+          tolerations:
+          - operator: Exists
+          containers:
+          - name: check
+            image: "{{ _nv_cli_image }}"
+            command: ["test", "-c", "/dev/kvm"]
+            volumeMounts:
+            - name: kvm
+              mountPath: /dev/kvm
+          volumes:
+          - name: kvm
+            hostPath:
+              path: /dev/kvm
+              type: CharDevice
+    loop: "{{ _nv_candidates }}"
+    loop_control:
+      label: "{{ item.node }}"
+
+  - name: Wait for the check pods to finish
+    kubernetes.core.k8s_info:
+      api_version: v1
+      kind: Pod
+      namespace: "{{ nested_virt_kvm_check_namespace }}"
+      label_selectors:
+      - app=nested-virt-kvm-check
+    register: r_nv_kvm_pods
+    until: >-
+      r_nv_kvm_pods.resources is defined
+      and (r_nv_kvm_pods.resources | selectattr('status.phase', 'in', ['Succeeded', 'Failed']) | list | length)
+          == (_nv_candidates | length)
+    retries: "{{ nested_virt_kvm_check_retries | int }}"
+    delay: "{{ nested_virt_kvm_check_delay | int }}"
+    ignore_errors: true
+
+  - name: Find worker nodes without /dev/kvm
+    ansible.builtin.set_fact:
+      _nv_nodes_without_kvm: >-
+        {{ _nv_candidates | map(attribute='node') | list | difference(
+           r_nv_kvm_pods.resources | default([])
+           | selectattr('status.phase', 'equalto', 'Succeeded')
+           | map(attribute='spec.nodeName') | list) }}
+
+  - name: Fail if any worker node is missing /dev/kvm
+    when: _nv_nodes_without_kvm | length > 0
+    ansible.builtin.fail:
+      msg: "Nodes without /dev/kvm: {{ _nv_nodes_without_kvm | join(', ') }}"
+
+  always:
+  - name: Delete the check namespace
+    kubernetes.core.k8s:
+      api_version: v1
+      kind: Namespace
+      name: "{{ nested_virt_kvm_check_namespace }}"
+      state: absent
+      wait: false

@@ -1,0 +1,114 @@
+---
+# Tests enable.yml (stop, modify, start, confirm) against a fake AWS CLI.
+# Run: ansible-playbook tests/ocp_nested_virtualization/test_enable.yml
+- name: Test ocp_nested_virtualization enable.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  environment:
+    PATH: "{{ playbook_dir }}/bin:{{ ansible_env.PATH | default(lookup('ansible.builtin.env', 'PATH')) }}"
+  vars:
+    _role: "{{ playbook_dir }}/../../roles/ocp_nested_virtualization"
+    _fixtures: "{{ playbook_dir }}/fixtures"
+    _log: "{{ playbook_dir }}/fake_aws.log"
+    nested_virt_start_delay: 0
+    _nv_targets:
+    - {instance_id: i-0aaa1, core_count: 4, threads_per_core: 2}
+    - {instance_id: i-0aaa2, core_count: 8, threads_per_core: 1}
+    _nv_stopped: []
+  tasks:
+  - name: test_enable_happy - run
+    ansible.builtin.include_tasks: enable_case.yml
+    vars:
+      _env: {FAKE_AWS_DESCRIBE: "{{ _fixtures }}/describe_all_enabled.json"}
+      _expect_failure: false
+
+  - name: test_enable_happy - one stop and one start for all targets, one modify each
+    ansible.builtin.assert:
+      that:
+      - _calls | select('match', 'ec2 stop-instances') | list == ['ec2 stop-instances --instance-ids i-0aaa1 i-0aaa2']
+      - _calls | select('match', 'ec2 wait instance-stopped --instance-ids i-0aaa1 i-0aaa2') | list | length == 1
+      - "'ec2 modify-instance-cpu-options --instance-id i-0aaa1 --core-count 4 --threads-per-core 2 --nested-virtualization enabled' in _calls"
+      - "'ec2 modify-instance-cpu-options --instance-id i-0aaa2 --core-count 8 --threads-per-core 1 --nested-virtualization enabled' in _calls"
+      - _calls | select('match', 'ec2 start-instances') | list == ['ec2 start-instances --instance-ids i-0aaa1 i-0aaa2']
+      - _calls | select('match', 'ec2 wait instance-running --instance-ids i-0aaa1 i-0aaa2') | list | length == 1
+      - _calls | select('match', 'ec2 describe-instances --instance-ids i-0aaa1 i-0aaa2') | list | length == 1
+      # order: stop, wait stopped, modify, start, wait running, describe
+      - _calls[0] is match('ec2 stop-instances')
+      - _calls[1] is match('ec2 wait instance-stopped')
+      - _calls[4] is match('ec2 start-instances')
+      - _nv_enabled_ids == ['i-0aaa1', 'i-0aaa2']
+
+  - name: test_enable_ice_retry - capacity errors are retried
+    ansible.builtin.include_tasks: enable_case.yml
+    vars:
+      _env: {FAKE_AWS_DESCRIBE: "{{ _fixtures }}/describe_all_enabled.json", FAKE_AWS_START_ICE: "2"}
+      _expect_failure: false
+
+  - name: test_enable_ice_retry - assert three start attempts
+    ansible.builtin.assert:
+      that:
+      - _calls | select('match', 'ec2 start-instances') | list | length == 3
+
+  - name: test_enable_other_error - other start errors fail without retry
+    ansible.builtin.include_tasks: enable_case.yml
+    vars:
+      _env: {FAKE_AWS_DESCRIBE: "{{ _fixtures }}/describe_all_enabled.json", FAKE_AWS_START_ERROR: "1"}
+      _expect_failure: true
+
+  - name: test_enable_other_error - assert one start attempt
+    ansible.builtin.assert:
+      that:
+      - _calls | select('match', 'ec2 start-instances') | list | length == 1
+
+  - name: test_enable_not_enabled_after - fails if AWS does not show nested virt enabled
+    ansible.builtin.include_tasks: enable_case.yml
+    vars:
+      _env: {FAKE_AWS_DESCRIBE: "{{ _fixtures }}/describe_mixed.json"}
+      _expect_failure: true
+
+  - name: test_enable_not_enabled_after - assert message names the instance
+    ansible.builtin.assert:
+      that:
+      - "'i-0aaa2' in _t_msg"
+      - "'not enabled' in _t_msg"
+
+  # Inputs set with set_fact (as select_targets.yml does): include params
+  # would outrank the set_fact inside enable.yml and pin the inputs.
+  - name: test_enable_restarts_stopped - set inputs
+    ansible.builtin.set_fact:
+      _nv_targets:
+      - {instance_id: i-0aaa2, core_count: 4, threads_per_core: 2}
+      _nv_stopped: [i-0aaa1]
+
+  - name: test_enable_restarts_stopped - stopped instances are started with the targets
+    ansible.builtin.include_tasks: enable_case.yml
+    vars:
+      _env: {FAKE_AWS_DESCRIBE: "{{ _fixtures }}/describe_all_enabled.json"}
+      _expect_failure: false
+
+  - name: test_enable_restarts_stopped - assert only the target is stopped and modified
+    ansible.builtin.assert:
+      that:
+      - _calls | select('match', 'ec2 stop-instances') | list == ['ec2 stop-instances --instance-ids i-0aaa2']
+      - _calls | select('match', 'ec2 modify-instance-cpu-options') | list | length == 1
+      - _calls | select('match', 'ec2 start-instances') | list == ['ec2 start-instances --instance-ids i-0aaa2 i-0aaa1']
+      - _calls | select('match', 'ec2 wait instance-running --instance-ids i-0aaa2 i-0aaa1') | list | length == 1
+
+  - name: test_enable_only_stopped - set inputs
+    ansible.builtin.set_fact:
+      _nv_targets: []
+      _nv_stopped: [i-0aaa1]
+
+  - name: test_enable_only_stopped - no targets, only stopped instances to start
+    ansible.builtin.include_tasks: enable_case.yml
+    vars:
+      _env: {FAKE_AWS_DESCRIBE: "{{ _fixtures }}/describe_all_enabled.json"}
+      _expect_failure: false
+
+  - name: test_enable_only_stopped - assert nothing is stopped or modified
+    ansible.builtin.assert:
+      that:
+      - _calls | select('match', 'ec2 stop-instances') | list == []
+      - _calls | select('match', 'ec2 modify-instance-cpu-options') | list == []
+      - _calls | select('match', 'ec2 start-instances') | list == ['ec2 start-instances --instance-ids i-0aaa1']

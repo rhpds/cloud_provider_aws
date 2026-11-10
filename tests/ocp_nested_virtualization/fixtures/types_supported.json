@@ -1,0 +1,16 @@
+{
+ "InstanceTypes": [
+  {
+   "InstanceType": "m7i.2xlarge",
+   "ProcessorInfo": {
+    "SupportedArchitectures": [
+     "x86_64"
+    ],
+    "Manufacturer": "Intel",
+    "SupportedFeatures": [
+     "nested-virtualization"
+    ]
+   }
+  }
+ ]
+}

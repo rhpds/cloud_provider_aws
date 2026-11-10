@@ -1,0 +1,60 @@
+[
+ {
+  "metadata": {
+   "name": "ocp-abc12-worker-us-east-2a-xyz1",
+   "labels": {
+    "machine.openshift.io/cluster-api-machine-role": "worker",
+    "machine.openshift.io/cluster-api-machine-type": "worker"
+   }
+  },
+  "spec": {
+   "providerSpec": {
+    "value": {
+     "instanceType": "m7i.2xlarge",
+     "placement": {
+      "region": "us-east-2",
+      "availabilityZone": "us-east-2a"
+     }
+    }
+   }
+  },
+  "status": {
+   "phase": "Running",
+   "providerStatus": {
+    "instanceId": "i-0aaa1",
+    "instanceState": "running"
+   },
+   "nodeRef": {
+    "kind": "Node",
+    "name": "ip-10-0-1-1.us-east-2.compute.internal"
+   }
+  }
+ },
+ {
+  "metadata": {
+   "name": "ocp-abc12-worker-us-east-2a-xyz2",
+   "labels": {
+    "machine.openshift.io/cluster-api-machine-role": "worker",
+    "machine.openshift.io/cluster-api-machine-type": "worker"
+   }
+  },
+  "spec": {
+   "providerSpec": {
+    "value": {
+     "instanceType": "m7i.2xlarge",
+     "placement": {
+      "region": "us-east-2",
+      "availabilityZone": "us-east-2a"
+     }
+    }
+   }
+  },
+  "status": {
+   "phase": "Provisioned",
+   "providerStatus": {
+    "instanceId": "i-0aaa2",
+    "instanceState": "running"
+   }
+  }
+ }
+]

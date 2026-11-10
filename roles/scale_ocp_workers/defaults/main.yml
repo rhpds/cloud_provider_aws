@@ -22,9 +22,20 @@ worker_machineset_suffix: "compute"
 worker_scale_retries: 90
 worker_scale_delay: 10
 
+# Enable EC2 nested virtualization on the worker instances after they are
+# Ready (agnosticd.cloud_provider_aws.ocp_nested_virtualization). Needs a
+# supported Intel worker_instance_type (for example m7i), at least one
+# worker, and the aws_nested_virt_access_key_id/
+# aws_nested_virt_secret_access_key credentials from the cluster's provision
+# data. A pre-flight check (preflight_config.yml) runs before any machines
+# are created and fails the order early when these are not met.
+openshift_aws_nested_virtualization_enable: false
+
 # Worker-only mode: removes worker label from control-plane nodes
-# and sets mastersSchedulable: false on the Scheduler object
-worker_only: false
+# and sets mastersSchedulable: false on the Scheduler object.
+# Follows openshift_aws_nested_virtualization_enable so VMs only run on the
+# workers with /dev/kvm; set explicitly to override.
+worker_only: "{{ openshift_aws_nested_virtualization_enable | bool }}"
 
 # Drain control-plane nodes to move existing workloads to dedicated workers
 # Only applies when worker_only is true

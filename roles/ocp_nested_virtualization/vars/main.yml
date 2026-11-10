@@ -1,0 +1,23 @@
+---
+# JMESPath queries shared by the selection tasks and the Machine wait loop.
+# Applied to a list of Machine resources.
+_nv_q_workers: >-
+  [?metadata.labels."machine.openshift.io/cluster-api-machine-role" == 'worker']
+# Applied to worker Machines.
+_nv_q_failed: >-
+  [?status.phase == 'Failed'].metadata.name
+_nv_q_not_ready: >-
+  [?status.phase != 'Failed' && !(status.phase == 'Running' && status.nodeRef)].metadata.name
+_nv_q_candidates: >-
+  [?status.phase == 'Running' && status.nodeRef].{
+  machine: metadata.name,
+  instance_id: status.providerStatus.instanceId,
+  instance_type: spec.providerSpec.value.instanceType,
+  region: spec.providerSpec.value.placement.region,
+  node: status.nodeRef.name}
+
+# AWS CLI prefix. The scoped credentials are read from a temporary shared
+# credentials file under this profile (see aws.yml), never from environment
+# variables, which Ansible shows at -vvv.
+_nv_aws_profile: nested-virt
+_nv_aws: ["aws", "--profile", "{{ _nv_aws_profile }}"]
